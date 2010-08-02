@@ -2,8 +2,9 @@
 
 = Meeting Notes =
 
-1. Prof. Pat O'Neil explained the idea of Escow and presented it with an example of Coca Cola selling system, and pointed out the difficulty of implementing Escow in open source DBMS is recovery.
-    There are 2 steps to do: first is implementing Escow in centralized DBMS, the second is expanding it to DBMS supporting distributed transaction.
+1. Prof. Pat O'Neil explained the idea of Escow and presented it with an example of Coca Cola selling system, and pointed out the difficulty of implementing Escrow in open source DBMS is recovery.
+
+    * There are 2 steps to do: first is implementing Escrow in centralized DBMS, the second is expanding it to DBMS supporting distributed transaction.
 
 2. Asked some questions related to CS734 lecture notes.
 
@@ -12,4 +13,5 @@
 1.  Do exercises under ~poneil/CS734.old/CS734.F05
 
 2. Find out whether Innodb supports distributed transaction or not.
-    MySql supports XA datasource from 5.1 version, so it can support distributed transaction, and it also uses 2PC in implementation. http://dev.mysql.com/doc/refman/5.1/en/xa.html
+
+    * MySql supports XA datasource from 5.1 version, so it can support distributed transaction, and it also uses 2PC in implementation. http://dev.mysql.com/doc/refman/5.1/en/xa.html
