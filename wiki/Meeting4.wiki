@@ -3,21 +3,26 @@
 = Design on Oracle =
 
 === Schema ===
-    * T -- table
-      ||TxId||int|| ||
-      ||id||int||primary key||
-      ||inf||int||inf >= MIN||
-      ||val||int|| ||
-      ||sup||int||sup <= MAX||
-    * V -- view
-      ||TxId||int|| ||
-      ||id||int||foreign key||
-      ||val||int|| ||
-    * Log -- table
-      ||TxId||row(8)||primary key||
-      ||id||int|| ||
-      ||amount||int|| ||
-      ||status||int||in(-1, 0, 1)||
+  * T -- table
+|| *Column Name* || *Type* || *Constraint* ||
+||TxId||int|| ||
+||id||int||primary key||
+||inf||int||inf >= MIN||
+||val||int|| ||
+||sup||int||sup <= MAX||
+
+  * V -- view
+|| *Column Name* || *Type* || *Constraint* ||
+||TxId||int|| ||
+||id||int||foreign key||
+||val||int|| ||
+
+  * Log -- table
+|| *Column Name* || *Type* || *Constraint* ||
+||TxId||row(8)||primary key||
+||id||int|| ||
+||amount||int|| ||
+||status||int||in(-1, 0, 1)||
 
 
 === Triggers ===
