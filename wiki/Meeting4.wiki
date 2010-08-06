@@ -29,7 +29,7 @@
     * update_val: will be fired when updating column value on T.
       {{{
 create or replace trigger update_val
-instead of update on v2
+instead of update on v
 for each row
 declare
 		pragma autonomous_transaction;
@@ -84,7 +84,7 @@ end;
 === App Layer Steps ===
   # update t set val = val +/- amount where id = ID;
   # update log set status = 1(commit)/-1(abort) where txid = TXID;
-
+  # commit;
 
 
 
