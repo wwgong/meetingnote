@@ -1,0 +1,23 @@
+#summary One-sentence summary of this page.
+
+= Meeting Notes =
+
+1. Reviewed the design discussed last time and decide:
+  * add an temporary table to store "inf" and "sup" for prodId
+  * keep the change of "val" as amount in Journal table so that we only update base table T after certain time by applying the sum of all amounts as the "net gain" 
+  * each request coming in, check the "inf" and "sup" and change it; create an autonomous transaction to insert a new row in Journal table; and before committing update the "status" in Journal table; if the transaction fails while committing, we can recover it in exception handling at app level
+
+
+2. Discussed how to initiate the test of above approach.
+  * test goal: throughput of the system
+  * language: script or Java
+  * basic idea: increasing number of threads, each of them does a request to the database, there are several intervals such as "start transaction to add order" and "order to commit", we will use randomly generated numbers
+  * ask Steve for client code as start
+
+
+
+= Action Points = 
+
+1. Write client code and try test.
+
+2. Think about the possibility of this approach in MySql or other implementation in MySql.
