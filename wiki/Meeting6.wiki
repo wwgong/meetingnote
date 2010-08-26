@@ -1,0 +1,183 @@
+#summary One-sentence summary of this page.
+
+= Test Model on Oracle =
+
+=== Scenario ===
+Generally, based on our schema design, the test model simulates this scenario:
+
+  * continuous coming in requests(simulate random number requests for each second), each request having a random waiting time until they finally decide check out or discard
+
+  * the ending of current test is when there is nothing left 
+
+  * the gaps of waiting time between placing order and making decision have normal distribution
+
+
+===Measurement===
+
+  1. finish_time: the total time until all stock are sold out
+
+  2. success_nowait: # of Tx that don't wait when placing orders
+
+  3. success_wait: # of Tx that waited when placing but eventually checked out successfully
+
+  4. failed_wait: # of Tx that waited but turned out of out of stock
+
+  5. failed_nowait: # of Tx that out of stock info came out before placing order
+
+
+=== Revised Schema Design ===
+
+  * base table "T":
+{{{
+create table t
+(id integer not null primary key, 
+val integer check (val > = 0);
+}}}
+
+  * helper table "TMP":
+{{{
+create table tmp
+(txid integer not null primary key, 
+id integer not null, 
+inf integer check (inf >= 0), 
+sup integer check (sup <= 1000000), 
+updated_time timestamp default SYSTIMESTAMP);
+}}}
+
+  * helper view "V":
+{{{
+create view v 
+as select id, val from t;
+}}}
+
+  * log table "JOURNAL":
+{{{
+create table journal
+(txid integer not null primary key, 
+id integer not null, 
+amount integer not null, 
+tx_status integer not null check (tx_status in (-1, 0, 1)), 
+confirmed integer not null check (confirmed in (0, 1)));
+}}}
+
+  * trigger "UPDATE_VAL" insert new record into table "TMP" and "JOURNAL":
+{{{
+create or replace trigger update_val 
+instead of update on v 
+for each row 
+declare 
+	pragma autonomous_transaction; 
+	txid	int; 
+	amount  int; 
+	min 	int; 
+	max		int; 
+begin 
+	amount := :new.val - :old.val; 
+	select inf, sup into min, max from tmp 
+	where updated_time = (select max(updated_time) from tmp);
+	select SYS_CONTEXT ( 'USERENV', 'SESSIONID') into txid from dual;
+	if(:new.val > :old.val) then 
+		insert into tmp values (txid, :new.id, min, max + amount, SYSTIMESTAMP);
+	else 
+		insert into tmp values (txid, :new.id, min + amount, max, SYSTIMESTAMP); 
+	end if; 
+insert into journal values(txid, :new.id, amount, 0, 0);
+commit; 
+end; 
+/
+}}}
+
+
+=== simple app level pseudo code ===
+  * on top level:
+{{{
+runner()
+{
+	i is for calculate when to apply net gain and update base table "T";
+	while(1) {
+	    requests_count is a random number less than 1000;
+	    ram is new random number generator;
+	    create thread factory with requests_count workers;
+	
+	    for each worker
+	    {
+	        waittime = ram.nextGaussian();
+	        exeucte(prodID, ranNum, waittime);
+	    }
+
+	    // calculate net gain each 100 seconds
+	    if(!i%100) {
+	        try{
+	            get all committed but not confirmed tx's net value from table "JOURNAL";
+	            update base table "T";
+	            update "JOURNAL" setting their field "confirmed" to 1
+	        } catch (SQLException) {
+	            abort the transaction
+	        }
+	        if(out of stock)
+	            break;
+	    }
+
+	    sleep(1);
+	}
+
+	getResult();
+}
+}}}
+
+  * on worker level:
+{{{
+failed = true;
+waited = false;
+placed = true;
+
+execute(int prodID, int orders, int waittime)
+{
+    place_order(prodID, orders);
+
+    if(placed)
+        during waittime
+            for each 10 secinds
+                try to place order again;
+
+    try{
+        update "JOURNAL" setting its tx_status to 1
+        failed = false;
+    } catch (SQLException) {
+        update "JOURNAL" setting its tx_status to -1
+    }
+}
+
+placeOrder(int prodID, int orders)
+{
+    try{
+        update view "V"
+    } catch (SQLException) {
+        // must have violated constraints on inf/sup of "TMP"
+        abort current transaction, but still need to insert the record to "JOURNAL"
+        start another new transaction
+        update "JOURNAL" setting its tx_status to 0
+        waited = true;
+        placed = false;    }
+}
+}}}
+
+
+
+
+= Autonomous transaction on PostgreSQL and MySQL =
+There is no autonomous transaction supported in PostgreSQL and MySQL.
+
+However, here is an example emulating it in PostgreSQL: [http://www.postgres.cz/index.php/PostgreSQL_SQL_Tricks#Autonomous_transaction_in_PostgreSQL Autonomous transaction in PostgreSQL], another example might be useful, [http://www.postgresql.org/docs/8.0/static/plpgsql-porting.html#PLPGSQL-PORTING-EX4 Port PL/SQL from Oracle to PostgreSQL].
+
+The trick in the first example uses 2 different databases, similar to 2 different data engines in MySQL. 
+
+
+
+= Meeting Notes =
+
+
+
+
+
+= Action Points = 
