@@ -1,4 +1,4 @@
-#Meeting minutes of Meeting#6.
+Meeting minutes of Meeting#6.
 
 = Test Model on Oracle =
 
