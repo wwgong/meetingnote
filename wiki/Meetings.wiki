@@ -2,7 +2,7 @@
 #labels Featured
 
 = Future scheduled meetings =  
-  * [Meeting7 UNKNOWN] _(10:00AM, in Pat's House)_.
+  * [Meeting8 UNKNOWN] _(10:00AM, in Pat's House)_.
 
   
 = Past Meetings =
@@ -12,3 +12,4 @@
   * [Meeting4 07/29/2010] _(10:30AM, in Pat's House)_
   * [Meeting5 08/06/2010] _(01:00PM, in Pat's House)_
   * [Meeting6 08/26/2010] _(10:00AM, in Pat's House)_
+  * [Meeting7 09/02/2010] _(02:00PM, in Pat's House)_.
