@@ -1,4 +1,4 @@
-#summary One-sentence summary of this page.
+Meeting minutes for Meeting#2.
 
 = Meeting Notes =
 
