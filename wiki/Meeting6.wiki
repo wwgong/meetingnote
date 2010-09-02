@@ -1,4 +1,4 @@
-#summary One-sentence summary of this page.
+#Meeting minutes of Meeting#6.
 
 = Test Model on Oracle =
 
@@ -31,17 +31,18 @@ Generally, based on our schema design, the test model simulates this scenario:
 {{{
 create table t
 (id integer not null primary key, 
-val integer check (val > = 0);
+val integer check (val >= 0 and val <= 1000000);
 }}}
 
   * helper table "TMP":
 {{{
 create table tmp
-(txid integer not null primary key, 
+(txid integer not null, 
 id integer not null, 
 inf integer check (inf >= 0), 
 sup integer check (sup <= 1000000), 
-updated_time timestamp default SYSTIMESTAMP);
+updated_time timestamp default SYSTIMESTAMP,
+primary key(txid, id));
 }}}
 
   * helper view "V":
@@ -70,11 +71,11 @@ declare
 	txid	int; 
 	amount  int; 
 	min 	int; 
-	max		int; 
+	max	int; 
 begin 
 	amount := :new.val - :old.val; 
 	select inf, sup into min, max from tmp 
-	where updated_time = (select max(updated_time) from tmp);
+	where id = :new.id and updated_time = (select max(updated_time) from tmp);
 	select SYS_CONTEXT ( 'USERENV', 'SESSIONID') into txid from dual;
 	if(:new.val > :old.val) then 
 		insert into tmp values (txid, :new.id, min, max + amount, SYSTIMESTAMP);
@@ -175,9 +176,133 @@ The trick in the first example uses 2 different databases, similar to 2 differen
 
 
 = Meeting Notes =
+1. why do we need table "TMP" as well as "JOURNAL", can we combine them into one single table?
+Yes we can, but we want to clean up table "TMP" time and again so that it's small enough to speed up our process. Thus, we place basic info in the "JOURNAL" table and details in "TMP".
+
+2. rewrite the app level suedo code
+  * on top level:
+{{{
+void runner()
+{
+	i is used to calculate the interval when should apply net gain and update base table "T";
+	oos indicates the status of all stock, if 0 products left, end the test, intialized to 0;
+
+	while(1) {
+
+	    requests_count is a random number less than 1000;
+	    ram is a random number generator;
+
+	    create thread factory with requests_count workers;
+	
+	    for each worker
+	    {
+	        waittime = ram.nextGaussian();
+	        exeucte(prodID, ranNum, waittime);
+	    }
+
+	    // calculate net gain each 100 seconds
+	    if(!i%100)
+	        oos = CONFIRM_ORDER();
+
+	    if(oos)
+		break;
+	    else
+		sleep(1);
+	}
+
+	getResult();
+}
+
+int CONFIRM_ORDER()
+{
+    left is the stock of products left after this update, initialized to 1;
+
+    try{
+	get all committed but not comfirmed tx's net value from table "JOURNAL";
+	update base table "T" and get stock of left products;
+	update table "JOURNAL" setting their field "confirmed" to TRUE;
+    } catch(SQLException) {
+	abort current transaction;
+	start a new transaction to try again;
+    } finally {
+	if(left > 0)
+	    return 0;
+	else
+	    return 1;
+    }
+}
+
+}}}
 
 
+
+  * on worker level:
+{{{
+
+failed = true;
+waited = false;
+placed = false;
+
+void execute(int prodID, int orders, int waittime)
+{
+    PLACE_ORDER(prodID, orders);
+
+    during waittime
+	for each 10 seconds
+	    if(!placed)
+		try PLACE_ORDER(prodID, orders) again;
+
+    // when finish, update the status of field "tx_status"
+    try{
+        update "JOURNAL" setting its tx_status to 1
+        failed = false;
+    } catch (SQLException) {
+        update "JOURNAL" setting its tx_status to -1
+    }
+
+    storeResult(failed, waited);
+}
+
+void PLACE_ORDER(int prodID, int orders)
+{
+    try{
+        update view "V" with prodID and orders;
+	placed = true;
+    } catch (SQLException) {
+	abort current transaction;
+
+	// there are two kinds of error, one is constraint violation error and the other one is real error
+        // if violated constraints of "val" on "T" which is also implemented on inf/sup of "TMP"
+	//autonomous transaction will automatically roll back, but current transaction can be executed successfully, we need to handle this
+	// if real error happened, autonomous transaction must have finished, that's just what we want 
+	// so we need to check if there is a record in "TMP"
+
+	if(there is a record in "TMP")
+	    placed = true;
+	else
+	    waited = true;
+
+    }
+}
+
+void SUBMIT_ORDER()
+{
+    try {
+	if(placed) {
+	    update "JOURNAL" setting its tx_status to 1;
+	    failed = false;
+	}
+    } catch(SQLException){
+	try to submit order again, if this fails too, tell user error happens,
+	and update "JOURNAL" setting its tx_status to -1;
+    }
+
+}
+
+
+}}}
 
 
 
 = Action Points = 
+Write client code based on Steve's test framework.
