@@ -7,5 +7,7 @@ Meeting minutes of Meeting#7.
 
 
 = Meeting Notes =
+1. Discussed the external C function and last week's process, decided to implement old approach(based on Steve's framework) first.
 
 = Action Points =
+1. Implement escrow prototype test based on Steve's framework.
