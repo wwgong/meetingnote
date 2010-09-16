@@ -25,6 +25,8 @@ The insert order transaction will fire the trigger which creates another autonom
 
 3. In later work, encapsulate all database operations in PL/SQLs to separate application level code and database access code.  
 
+4. Add comparative test executing without autonomous transaction. 
+
 
 = Action Points =
-1. Finish first 2 points.
+1. Finish above 4 points.
