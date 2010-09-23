@@ -75,3 +75,6 @@ Meeting minutes of Meeting#9.
     * add a keyword "escrow" in "update" statement
     * or add a new statement "set transaction escrow" like "set isolation level" followed by normal "update" statement
     * or add another system type to specify one field to be escrow type, then any update to this field automatically to be applied as escrow transaction
+  * useful link: 
+     * [http://forge.mysql.com/wiki/MySQL_Internals Internals of MySQL]
+     
