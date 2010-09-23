@@ -19,11 +19,11 @@ The insert order transaction will fire the trigger which creates another autonom
     * Need to recreate trigger after first data load.
 
 = Meeting Notes =
-1. Modify the prototype to make the test follows "warmup", "measurement", and "cooldown" phrases. In "warmup" phrases, let database start to work, the time measuring during "measurement" phrase, and at last reduce workload and finish all work in "cooldown" phase. 
+1. Modify the prototype to make the test follows "warmup", "measurement", and "cooldown" phases. In "warmup" phases, let database start to work, the time measures during "measurement" phase, and at last reduce workload and finish all work in "cooldown" phase. 
 
-2. Modify worker thread, let each worker thread keep accepting application requests, so that we have a few worker threads, but can produce as many requests as we want.
+2. Modify worker thread, let each worker thread keep accepting application requests, so that we have some worker threads(~20), but can produce as many requests as we want.
 
-3. In later work, encapsulate all database operations in PL/SQLs to separate application level code and database access code.  
+3. In later work, encapsulate all database operations in PL/SQL procedures to separate application level code and database access code.  
 
 4. Add comparative test executing without autonomous transaction. 
 
