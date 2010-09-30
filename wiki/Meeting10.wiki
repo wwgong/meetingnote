@@ -1,0 +1,58 @@
+#Meeting minutes of Meeting#10. 
+
+= Meeting Notes =
+1. For project on Oracle.
+
+  * The potential problem that the trigger might get more than 1 latest inf/sup pair can be solved by more precise timestamp
+    * Modify the TIMESTAMP data type to get nanosecond precision
+
+  * Same TransactionID for all transactions within one thread.
+    * Add timestamp to transactions within one thread to distinguish
+
+  * Error: "ORA-08177: can't serialize access for this transaction" with serializable setting in trigger "update_val" 
+    * try to increase the size of table space, because the reason of this error may be due to small table space can't store enough certain versions.
+
+
+2. Escrow in MySQL.
+  * IDE: try Eclipse for C/C++.
+  * main task: explore where, "row" or "lock" or "transaction", to add new code to implement Escrow transaction.
+  * how to distinguish Escrow and regular transaction:
+    * hard code: specify table name and column name, when meet certain condition, follow escrow transaction path.
+  * try to write pseudo code of "update" statement of Escrow Transaction type.
+
+
+= Action Points =
+1. Get nanosecond precision for TIMESTAMP type data in table "request".
+  * TRY:
+    * timestamp(9) represents nanosecond precision TIMESTAMP type data.
+    * SYSTIMESTAMP(9) get current time with nanosecond precision.
+  * Result
+    * all last 3 digits inserted in the table are 0.
+    * reason: The fractional time portion of TIMESTAMP data type is platform dependent.
+       * try command "date +%N", the output is nothing, means the platform doesn't support nanosecond precision(9 digits), so that Oracle which only simple use what returned can't get nanosecond precision.
+
+2. Add timestamp to distinguish transactions within one thread.
+  * add one field "createtime"of TIMESTAMP type in table JOURNAL.
+  * the value of "createtime" is the same as the value of "updated_time" in table REQUEST
+  * need to return this value to application code, because we need it to find the correct record to update its "updated_time"(table REQUEST), "tx_status"(table JOURNAL) and inf/sup pair(table "REQUEST") in procedure FINISH_ORDER.
+  * The reason we don't need to worry there might exist same pair (timestamp, txid, id) triplets is, txid is different among different threads, and timestamp must be different among transactions within same thread.
+
+3. Error: "ORA-08177: can't serialize access for this transaction" with serializable setting in trigger "update_val"
+  * First. the scenario causing this problem is: 
+{{{
+Transactions A and B start (doesn't matter which started first)
+Transaction B updates a row.
+Transaction B commits.
+Transaction A attempts to update the same row.
+}}}
+  * From Oracle documentation, it says "Oracle's serializable isolation is suitable for environments where there is a relatively low chance that two concurrent transactions will modify the same rows and the long-running transactions are primarily read only. It is most suitable for environments with large databases and short transactions that update only a few rows.", which means SERIALIZABLE is not suitable for our case.
+  * Its suggestion for this error is "Coding serializable transactions requires extra work by the application developer to check for the Cannot serialize access error and to undo and retry the transaction" -- rollback and retry it.
+  * So, increasing table space doesn't help and we need to rethink about the isolation level problem again.
+
+
+4. Eclipse for C/C++.
+   * better than Anjuta. 
+
+5. Debug MySQL.
+   * project built successfully inside Eclipse and outside Eclipse
+   * have trouble running project, mysqld
