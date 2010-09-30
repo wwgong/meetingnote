@@ -56,3 +56,51 @@ Transaction A attempts to update the same row.
 5. Debug MySQL.
    * project built successfully inside Eclipse and outside Eclipse
    * have trouble running project, mysqld
+
+6. 1st try of pseudo code in mysql.
+  * file: _Trx0trx.h_, structure: _trx_struct_
+    * add a struct "escrow_struct" keeping all related info here
+{{{
+struct escrow_struct {
+    ibool is_escrow;
+    dict_table_t* table;
+    upd_node_t*	upd_node;
+    que_thr_t*	thr;
+}
+}}}
+    * add a field
+{{{
+escrow_t* escrow;
+}}}
+  * file: _Row0mysql.c_, function: _row_update_for_mysql()_
+    * add code
+{{{
+if(certain table with certain field) {
+    set is_escrow of escrow in current trx = true;
+    copy prebuit->table to escrow->table
+    copy prebuilt->upd_node to escorw->upd_node
+}
+}}}
+  * file: _Row0upd.c_, function: _row_upd_step()_
+    * modify affected code
+{{{
+if(!trx->escorw->is_escrow){
+    err = lock_table(0, node->table, LOCK_IX, thr); 
+    do real update;
+}else {
+    err = lock_table(0, node->table, LOCK_S, thr);
+    update inf/val/sup in shared memory;
+    return without real updating;
+}
+}}}
+  * file: _Trx0trx.c_, function: _trx_commit_for_mysql()_
+    * add code doing real update here
+{{{
+if(escorw->is_escrow){
+    set escrow.is_escrow to false;
+    row_upd_step(escrow->thr);
+    modify inf/val/sup in shared memory again;
+}
+}}}
+  
+  
