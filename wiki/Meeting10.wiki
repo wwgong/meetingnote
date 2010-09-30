@@ -93,7 +93,7 @@ if(!trx->escorw->is_escrow){
     return without real updating;
 }
 }}}
-  * file: _Trx0trx.c_, function: _trx_commit_off_kernel()_
+  * file: _Trx0trx.c_, function: _trx_commit_for_mysql()_
     * add code doing real update here
 {{{
 if(escorw->is_escrow){
