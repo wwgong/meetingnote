@@ -93,13 +93,20 @@ if(!trx->escorw->is_escrow){
     return without real updating;
 }
 }}}
-  * file: _Trx0trx.c_, function: _trx_commit_for_mysql()_
+  * file: _Trx0trx.c_, function: _trx_commit_off_kernel()_
     * add code doing real update here
 {{{
 if(escorw->is_escrow){
     set escrow.is_escrow to false;
     row_upd_step(escrow->thr);
-    modify inf/val/sup in shared memory again;
+    modify val and inf/sup in shared memory again;
+}
+}}}
+  * file: _Trx0roll.c_, function: _trx_rollback()_
+    * add code recalculate val and inf/sup and skip real update
+{{{
+if(escorw->is_escrow){
+    modify inf/val/sup in shared memory;
 }
 }}}
   
