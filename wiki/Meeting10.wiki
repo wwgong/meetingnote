@@ -40,7 +40,7 @@
 3. Error: "ORA-08177: can't serialize access for this transaction" with serializable setting in trigger "update_val"
   * First. the scenario causing this problem is: 
 {{{
-Transactions A and B start (doesn't matter which started first)
+Transaction A and B start (doesn't matter which started first)
 Transaction B updates a row.
 Transaction B commits.
 Transaction A attempts to update the same row.
