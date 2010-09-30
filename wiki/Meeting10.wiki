@@ -109,5 +109,9 @@ if(escorw->is_escrow){
     modify inf/val/sup in shared memory;
 }
 }}}
-  
+
+
+7. Two useful articles about group commit based on InnoDB 1.0.4:
+  * [http://yoshinorimatsunobu.blogspot.com/2009/08/great-performance-effect-of-fixing.html Great performance effect of fixing broken group commit]
+  * [http://www.facebook.com/note.php?note_id=121808390932 Group commit and InnoDB]
   
