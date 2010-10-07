@@ -19,7 +19,7 @@
   * First, run "./configure --prefix=/your/path --with-debug --with-plugins=innobase".
      * *Note: the configure option "--with-innodb" listed in MySQL documentation is not recognizable by MySQL*
 
-  * Create an empty Eclipse C++ project, reference link: [http://forge.mysql.com/wiki/Eclipse/CDT_on_Linux_and_Mac_OS_X#Things_I_haven.27t_figured_out_yet Create Eclipse Project] 
+  * Create an empty Eclipse C++ project, reference link: [http://forge.mysql.com/wiki/Eclipse/CDT_on_Linux_and_Mac_OS_X#Things_I_haven.27t_figured_out_yet Create A Eclipse Project] 
     * Link the source code with project: "New" -> "Folder" -> "Advanced" -> "Link to folder in the file system" and choose directory and click "Finish" button. 
     * In the "Properties" -> "C/C++ Build" view disable "Makefile generation"
 
@@ -54,6 +54,39 @@
   
   * Error: "LINK: fatal error LNK1181: cannot open input file Debug\sql.lib"
      * haven't figured out how to solve it
+
+3. Observations of running "UPDATE" statement.
+  * 11 threads total under _mysqld _ program
+    * basic analyze 
+      * 2 threads running on common mysqld
+      * 8 threads running on innobase storage
+      * 1 thread running through common mysqld and innobase
+    * detailed thread stack
+      * *main()->handle_connection_sockets()* _-> select() -> __kernel_vsyscall()_
+      * io_handler_thread() -> fil_aio_wait() -> os_aio_simulated_handle() -> os_event_wait_low() -> safe_cond_wait() _-> pthread_cond_wait() -> __kernel_vsyscall()_
+      * io_handler_thread() -> fil_aio_wait() -> os_aio_simulated_handle() -> os_event_wait_low() -> safe_cond_wait() _-> pthread_cond_wait() -> __kernel_vsyscall()_
+      * io_handler_thread() -> fil_aio_wait() -> os_aio_simulated_handle() -> os_event_wait_low() -> safe_cond_wait() _-> pthread_cond_wait() -> __kernel_vsyscall()_
+      * io_handler_thread() -> fil_aio_wait() -> os_aio_simulated_handle() -> os_event_wait_low() -> safe_cond_wait() _-> pthread_cond_wait() -> __kernel_vsyscall()_
+      * *srv_lock_timeout_thread()* -> os_thread_sleep() _-> select() -> __kernel_vsyscall()_
+      * *srv_error_monitor_thread()* -> os_thread_sleep() _-> select() -> __kernel_vsyscall()_
+      * *srv_monitor_thread()* -> os_thread_sleep() _-> select -> __kernel_vsyscall()_
+      * *srv_master_thread()* -> os_event_wait() -> safe_cond_wait() _-> pthread_cond_wait() -> __kernel_vsyscall()_
+      * *signal_hand()* _-> sigwait() -> do_sigwait() -> __kernel_cond_wait()_
+   * most important thread handling the UPDATE
+      * row_upd_step() at _row0upd.c_
+      * row_update_for_mysql() at _row0mysql.c_
+      * ha_innobase::update_row() at _ha_innodb.cc_
+      * handler::ha_update_row() at _handler.cc_
+      * mysql_update() at _sql_update.cc_
+      * mysql_execute_command() at _sql_parse.cc_
+      * mysql_parse() at _sql_parse.cc_
+      * dispath_command() at _sql_parse.cc_
+      * do_command() at _sql_parse.cc_
+      * handle_one_connection() at _sql_connect.c_
+      * start_thread()
+      * clone()
+
+
 
 3. Redesign. 
 
