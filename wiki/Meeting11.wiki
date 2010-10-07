@@ -1,8 +1,60 @@
 #Meeting minutes of Meeting#11. 
 
 = Meeting Note =
+1. Debug MySQL.
+  * use Eclipse CDT on Linux
+  * or use Visual Studio on Windows
 
+2. Modify 1st design.
+  * redesign structure "escrow": move to structure "que_bue"? or remove some unnecessary fields?
+  * Explore spinlock supported in MySQL
+  
 
 
 
 = Action Points =
+
+1. Debug MySQL in Eclipse.
+
+  * First, run "./configure --prefix=/your/path --with-debug --with-plugins=innobase".
+     * *Note: the configure option "--with-innodb" listed in MySQL documentation is not recognizable by MySQL*
+
+  * Create an empty Eclipse C++ project, reference link: [http://forge.mysql.com/wiki/Eclipse/CDT_on_Linux_and_Mac_OS_X#Things_I_haven.27t_figured_out_yet Create Eclipse Project] 
+    * Link the source code with project: "New" -> "Folder" -> "Advanced" -> "Link to folder in the file system" and choose directory and click "Finish" button. 
+    * In the "Properties" -> "C/C++ Build" view disable "Makefile generation"
+
+  * Build the project
+    * Choose "Debug" configuration for project
+    * Build all
+
+  * Pre-setup for debugging.
+    * Running "scripts/mysqld_safe --skip-grant-tables &" in a command prompt
+    * Running "client/.libs/mysql --user=mysql" in another command prompt
+    * Set password for one user(eg. root)
+    * Create a table using "ENGINE=INNODB" option and insert some records
+    * Stopping "mysqld" server
+
+  * Running project
+    * Create a debug configuration of mysql
+    * Start "mysqld" inside Eclipse(with debug mode)
+    * Running "mysql" outside of Eclipse to connect to "mysqld" started in previous step
+    * Set breakpoints
+
+  * Things haven't figured out
+    * The default password of user "mysql" and "root" doesn't work after initialized databse
+
+
+
+2. Debug MySQL in Visual Studio.
+  * Mainly followed this documentation, [http://dev.mysql.com/doc/refman/5.1/en/windows-source-build.html Install from Source Code on Windows]
+    * *Note: Currently MySQL doesn't support Visual Studio 2010*
+      * Create another .bat file under directory PATH/win/build-vs10.bat with follow command
+         * cmake -G "Visual Studio 10"
+    * Need to install ActivePerl to run test scripts, since cygwin doesn't automatically support perl.
+  
+  * Error: "LINK: fatal error LNK1181: cannot open input file Debug\sql.lib"
+     * haven't figured out how to solve it
+
+3. Redesign. 
+
+4. Spinlock in MySQL.
