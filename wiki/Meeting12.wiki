@@ -27,3 +27,9 @@
   * later, we should introduce another method to manage this structure for each escrow type field
      * because we can't keep each one for every escrow type field while server running
      * the better way is to create it when one transaction coming in to update this field and keep it until all update transactions relating to it end.
+
+
+
+Useful course website for MIPS: 
+  * [http://sandbox.mc.edu/~bennet/cs314/index.html Mississippi College]
+  * [http://logos.cs.uic.edu/366/index.html UIC]
