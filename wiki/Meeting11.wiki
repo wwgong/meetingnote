@@ -33,6 +33,7 @@
     * Set password for one user(eg. root)
     * Create a table using "ENGINE=INNODB" option and insert some records
     * Stopping "mysqld" server
+       * If installed MySQL from binary package starts automatically when Linux starts, stop it via command "sudo /etc/init.d/mysql stop"
 
   * Running project
     * Create a debug configuration of mysql
