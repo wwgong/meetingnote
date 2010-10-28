@@ -1,0 +1,168 @@
+#Meeting minutes of Meeting#13. 
+
+
+
+= Meeting Notes =
+=== 1. Point out design flaws and code bugs ===
+  * struct to store all escrow update request
+     * change to a linked list
+     * modify "escrow_req_struct", delete "escrow_req_list" to use standard list definition in MySQL added in "trx_struct".
+{{{
+typedef struct escrow_req_struct {
+	ibool is_pending;
+	upd_node_t upd_node;
+        UT_LIST_NODE_T(escrow_req_struct) escrow_reqs;
+}escrow_req;
+
+...
+
+ibool is_escorw;
+ibool redo_upd;
+UT_LIST_BASE_NODE_T(escrow_req) escrow_req_list;
+
+
+}}}
+
+  * Lock mechanism in MySQL
+     * Shouldn't place a S_LOCK on table
+
+  * When to initialize the shared data (val/inf/sup)?
+     * No need to initialize them when server starting
+     * Still be server global variables
+     * Initialize them at the first time accessing escrow field data
+
+=== 2. Rewrite previous design in pseudo code ===
+  * 2 versions
+    * one at high level pseudo code
+    * the other one with more details
+
+
+
+= Action Points = 
+
+
+=== 1. When to create struct prebuilt() ===
+    * Command: use DBNAME
+    * create one object for each table in INFOMATION_SCHEMA.table_names
+    * Lifetime: all time while connecting to this storage/database
+    * Function stacks:
+{{{
+row_create_prebuilt()
+ha_innobase::open()
+handler::ha_open()
+open_table_from_share()
+open_unireg_entry()
+open_table()
+open_tables()
+open_normal_and_derived_tables()
+mysqld_list_fields()
+dispath_command()
+}}}
+
+=== 2. How to commit a transaction ===
+     * autocommit = ON
+{{{
+trx_commit_for_mysql()
+innobase_commit_low()
+innobase_commit()
+ha_commit_one_phase()
+ha_commit_trans()
+ha_autocommit_or_rollback()
+dispath_command()
+do_command()
+handle_one_connection()
+}}}
+     * autocommit = OFF
+{{{
+...
+ha_commit_trans()
+end_trans()
+mysql_execute_command()
+mysql_parse()
+dispath_command()
+do_command()
+handle_one_connection()
+}}}
+
+=== 3. Which level to add redo update? ===
+    * Escrow is rarely applied to autocommit ON case since if use commit trx immediately after update, we don't need to delay update; moreover, both cases shared the same routine to commit transaction. Thus, we could try to add it at innobase_commit_low().
+    * No need to restore struct prebuilt because it's accessible one innobase handler level in ha_innobase class
+
+
+===4. Lock types ===
+  * From [http://dev.mysql.com/doc/refman/5.1/en/innodb-record-level-locks.html InnoDB Lock Types]
+  * 3 types:
+    * Record lock: This is a lock on an index record.
+    * Gap lock: This is a lock on a gap between index records, or a lock on the gap before the first or after the last index record.
+    * Next-key lock: This is a combination of a record lock on the index record and a gap lock on the gap before the index record.
+
+
+=== 5. Latching Order(from sync0sync.h) ===
+  * User transaction locks
+  * Dictionary
+    * Dictionary mutex
+    * Dictionary head
+  * Secondary index(if any)
+    * Secondary index tree latch
+    * Secondary index non-leaf
+    * Secondary index leaf -- hold
+  * Clustered index
+    * Clustered index tree latch -- release immediately after get its leaf latch
+    * Clustered index non-leaf
+    * Clustered index leaf
+  * Transaction (trx_struct)
+    * Transaction system header
+    * Transaction undo mutex -- mutex_t undo_mutex
+    * Rollback segment -- trx_rseg_t	rseg
+      * Rollback segment mutex
+      * Rollback segment header
+  * Purge system latch
+  * Undo log pages
+  * File space management latch	
+  * File system pages
+  * Kernel mutex
+  * Search system mutex
+  * Buffer pool mutex
+  * Log mutex
+  * Any other latch
+  * Memory pool mutex
+
+
+
+
+=== 6. Lock a row in update === 
+  * Lock a clustered index node -- necessary
+{{{
+lock_rec_lock() with LOCK_X
+lock_clust_rec_modify_check_and_lock()
+btr_cur_update_in_place()/btr_cur_optimistic_update()
+row_upd_clust_rec()
+row_upd_clust_step()
+row_upd()
+row_upd_step()
+}}}
+
+  * Lock a secondary index node -- if the update changes the secondary index, optional
+{{{
+lock_rec_lock() with LOCK_X
+lock_sec_rec_modify_check_and_lock()
+btr_cur_del_mark_set_sec_rec()
+row_upd_sec_index_entry()
+row_upd_sec_step()
+row_upd()
+row_upd_step()
+}}}
+
+
+
+=== 7. Pseudo Code ===
+
+    
+
+
+
+
+=== Other ===
+  * updated fields -- thd->lex->select_lex->item_list
+  * update vals -- thd->lex->value_list
+  * 
