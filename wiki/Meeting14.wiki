@@ -157,12 +157,123 @@ row_upd_step()
 
 === 7. Pseudo Code ===
 
-    
+  * Shared data to store val/inf/sup
+    * Add a new server global variable
+{{{
+typedef struct{
+        int val;
+        int inf;
+        int sup;
+}escrow_shd_struct;
+
+struct{
+      ibool inited = false;
+      escrow_shd_struct data;
+}escrow_key_data;
+
+escrow_key_data escrow_data;
+}}}
+    * Must be guarded by kernel mutex while accessing it
+{{{
+mutex_enter(kernel_mutex)
+ACCESS ESCROW_DATA;
+mutex_exit(kernel_mutex) 
+}}}
+    * Initialize it when first time accessing it
+{{{
+if(!escrow_data.inited) {
+    escrow_data.data.val = QUERY_TABLE_GET_VALUE(table, column, key);
+    escrow_data.data.inf = escrow_data.data.sup = escrow_data.data.val;
+    escrow_data.inited = TRUE;
+}
+}}}
+
+  * List to store data of all escrow-type update queries
+    * Create new struct type and add it to transaction struct (trx_struct)
+{{{
+typedef struct escrow_req_struct {
+	ibool is_pending = TRUE;
+	upd_node_t(*) upd_node;  /* copy from original update node */
+        /* think que_thr_t no more needed, because 
+         * we can modify commit at innobase handler level */
+        UT_LIST_NODE_T(escrow_req_struct) neighbor_reqs;
+}escrow_req;
+
+...
+
+ibool is_escorw = FALSE;
+ibool redo_upd = FALSE;
+UT_LIST_BASE_NODE_T(escrow_req) escrow_req_list;
+}}}
+    * Do real update at the end of trx commit
+{{{
+if(trx.is_escrow)
+{
+   trx.redo_upd = TRUE;
+   escrow_req(*) cur = escrow_req_list.first;
+
+   while(cur != escrow_req_list.last) {
+       ESCROW_ROW_UPDATE(cur.upd_node, prebuild);
+       cur.is_pending = FALSE;
+       cur = cur.next;
+   }
+}}}
+
+  * Routine of ESCROW_ROW_UPDATE()
+{{{
+/* If it's escrow-type update, 1st time, place a S lock on all row
+ * original query may access, then store needed info in trx_struct;
+ * 2nd time(end of committing trx), redo update using stored info. 
+ * If it's regular update, just do it as regular way. */
+
+ESCROW_ROW_UPDATE(upd_node_t(*) upd_node, que_thr_t(*) prebuilt ) {
+
+/* escrow-type update at 1st time */
+if(!trx.redo_upd && UPDATE_ON_ESCROW_TABLE_AND_FIELD)
+{   
+    trx.is_escrow = TRUE;
+    UT_LIST_ADD_FIRST(trx.escrow_req_list, upd_node);
+}
 
 
 
+}
+
+if(!trx.is_escrow || trx.redo_upd)
+    DO_REGULAR_UPDATE;
+else {
+    err = lock_table(table, LOCK_IS);
+
+    if(err != DB_SUCCESS)
+        goto error_handling;
+
+    btr_cur(*) cur = get_btr_cur(node->pcur);
+
+    while(cur.next != NULL) {
+
+        lock_rec_lock(cur, LOCK_S);
+
+	if (err != DB_SUCCESS)
+	      goto function_exit;
+
+	cur = cur.next;
+    }
+       
+
+    while(node->index != NULL) {
+
+        lock_rec_lock(node->index, LOCK_S);
+
+	if (err != DB_SUCCESS)
+	      goto function_exit;
+
+	node->index = dict_table_get_next_index(node->index);
+    }
+
+    return;
+}
+}}}
 
 === Other ===
   * updated fields -- thd->lex->select_lex->item_list
   * update vals -- thd->lex->value_list
-  * 
