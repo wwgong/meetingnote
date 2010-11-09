@@ -10,7 +10,7 @@
 {{{
 typedef struct escrow_req_struct {
 	ibool is_pending;
-	upd_node_t upd_node;
+	upd_node_t`*` upd_node;
         UT_LIST_NODE_T(escrow_req_struct) escrow_reqs;
 }escrow_req;
 
@@ -193,7 +193,7 @@ if(!escrow_data.inited) {
 {{{
 typedef struct escrow_req_struct {
 	ibool is_pending = TRUE;
-	upd_node_t(*) upd_node;  /* copy from original update node */
+	upd_node_t'*' upd_node;  /* copy from original update node */
         /* think que_thr_t no more needed, because 
          * we can modify commit at innobase handler level */
         UT_LIST_NODE_T(escrow_req_struct) neighbor_reqs;
@@ -210,7 +210,7 @@ UT_LIST_BASE_NODE_T(escrow_req) escrow_req_list;
 if(trx.is_escrow)
 {
    trx.redo_upd = TRUE;
-   escrow_req(*) cur = escrow_req_list.first;
+   escrow_req'*' cur = escrow_req_list.first;
 
    while(cur != escrow_req_list.last) {
        ESCROW_ROW_UPDATE(cur.upd_node, prebuild);
