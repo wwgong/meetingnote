@@ -134,6 +134,7 @@ loop:
 		for(node != null) {
 			if (node.status == finished) {
 				total = total + node.amount;
+	                        WRITE_JOURNAL;
 				node = node->next;
 			}
 		}
