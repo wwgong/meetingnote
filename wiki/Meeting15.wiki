@@ -1,0 +1,186 @@
+#Meeting minutes of Meeting#15. 
+
+
+= Revised system design for Escrow in MySQL =
+
+
+
+*Key points(by Pat):*
+   # Keep all information in memory;
+   # Group commit.
+
+
+
+=== 1. What information need to be stored? ===
+
+For each record in Escrow table(will be updated by Escrow transactions later), there is one corresponding *escrow_cell_struct*. Here are the fields in this struct:
+
+  * id (type: int)
+  -- The identity number of the record. eg, in Coca-cola example, this field can be the name of the product. 
+
+  -- To simplify problem, let this field be integer type data.
+
+  * escrow_fields (type: escrow_fields_t)
+  -- This struct contains val/inf/sup, most important to implement Escrow
+{{{
+typedef struct escrow_fields_struct escrow_fields_t;
+
+struct escrow_fields_struct {
+  int	 inf;
+  int	 val;
+  int	 sup;
+};
+}}}
+
+  * mutex
+  -- Actually, this is not a field in escrow_cell_struct, it's implemented by existed kernel mutex of MySQL.
+
+  * trx_list (type: UT_LIST_BASE_NODE_T(escrow_trx_node_t))
+  -- This list is a double-linked list, includes all running transactions and committing transactions.
+{{{
+typedef struct escrow_trx_node_struct escrow_trx_node_t;
+
+struct escrow_trx_node_struct {
+	int		txid; 		// the txid stored in this transaction's trx_t
+	int		amount; 	// the amount this trx wants to apply on the record
+	enum_status	status;		// only have 2 types, "running" and "finished"
+	mutex_t*	trx_mutex;	// the mutex to protect current trx node, the reason we need it is we want 
+					// to block it until its update is done by some other
+	UT_LIST_NODE_T(escrow_trx_node_t)	neighbores;
+};
+}}}
+
+
+=== 2. How to manage this information? ===
+
+  * a. When to create the data struct for each record?
+  -- After the server starts, when the first Escrow type transactions wants to update this record, we create one escrow_cell_struct for it.
+
+
+  * b. When to update it?
+  -- We need to consider it when transactions starts, ends(commit or abort) and when doing group commit, details in next section.
+
+=== 3. When and how to manage one _escrow_cell_struct_? ===
+
+  * Whenever an Escrow transaction starts to update the record, things need to do to its corresponding escrow_cell_struct data:
+
+    -- Create one trx_node_t, and add it to trx_list with its own txid, the amount it wants to update, and set status to "running".
+
+    -- Request its own trx_mutex.
+
+    -- Request kernel mutex.
+
+    -- Modify inf/val/sup in escrow_fields (see the method introduced in Pat's paper).
+
+    -- Release kernel mutex.
+
+
+  * Whenever an Escrow transaction commits.
+
+    -- Go through escrow_trx_list to find its node based on txid.
+
+    -- Request its own escrow_trx_node_t's trx_mutex.
+
+    -- Set status to "finished".
+
+    -- Request kernel mutex.
+
+    -- Modify inf/val/sup in escrow_fields (see the method introduced in Pat's paper).
+
+    -- Release kernel mutex.
+
+  * Whenever an Escrow transaction aborts.
+
+    -- Go through escrow_trx_list to find its node based on txid.
+  
+    -- Request kernel mutex.
+
+    -- Modify inf/val/sup in escrow_fields (see the method introduced in Pat's paper).
+
+    -- Release kernel mutex.
+
+    -- Remove its trx node from escrow_trx_list.
+
+  * Whenever group commit.
+
+    -- Go through the trx_list to get the "net amount" from all "finished" marked trx nodes.
+
+    -- Do real update to the base table.
+
+    -- Remove all "finished" marked nodes from escrow_trx_list.
+
+
+=== 4. How to mimic group commit in MySQL? ===
+
+_There is no group commit supported by any MySQL storage engine, we need to create a new thread and let it do the work._
+
+  * When to create the thread?
+     * The idea time is just after there is any escrow_cell_struct existing in memory, but we don't want to do this work in very low level. 
+     * Instead, we can create it when starting server, just like other monitor threads.
+        * Problem: how this thread works if no escrow_cell_struct exists? Do we need to handle this separately?
+        * Solution: we can create a dummy escrow_cell_struct when server starts too, so that this thread will always perform normal group commit.
+
+
+  * Work mechanism of group commit thread.
+{{{
+loop:
+	sleep(GIVEN_TIME);
+
+	for each escrow_cell_struct {
+		set total = 0;
+
+		// go through its escrow_trx_list, to get net amount
+		node = first escrow_trx_node in escrow_trx_list;
+		for(node != null) {
+			if (node.status == finished) {
+				total = total + node.amount;
+				node = node->next;
+			}
+		}
+
+		if(total > 0)
+			DO_REAL_UPDATE(total);
+
+		// go through the list again to unblock waiting transactions and remove it
+		node = first escrow_trx_node in escrow_trx_list;
+		for(node != null) {
+			if (node.status == finished) {
+				release(node.trx_mutex);
+				node = node->next;
+				remove(node->prev);
+			}
+		}
+	}
+
+	if(server is still up)
+		goto loop;
+
+}}}
+
+=== 5. Others  ===
+  * Desired actions need to take after crash depends on when the crash happens
+|| Num || When || Action ||
+|| 1 || before trx commit starts || none ||
+|| 2 || between trx commit starts(status = "finished", mutex = -1) and next group commit starts || redo trx ||
+|| 3 || during group commit || redo group commit ||
+|| 4 || between group commit ends(mutex = 0) and trx commit ends || undo trx, and redo trx ||
+|| 5 || after trx complete commit || none ||
+
+  * Note: the reason in number 4, we need to undo and redo the trx is instead of traditional "write log first, then data", we let group-commit write the data first in REAL UPDATE. 
+
+  * Also. the order of sequences can affect the recovery design.
+
+  * Update inf/val/sup vs. trx commit. An alternative step is:
+    * Note: step 5 and 6 may switch.
+    # Set status = "finished".
+    # Request trx_mutex
+    # Wait until group commit release the trx_mutex.
+    # Modify inf/val/sup.
+    # Complete commit.
+
+  * Update inf/val/sup vs. group commit.
+    * We can modify inf/val/sup in group commit.
+
+  * Need to study recovery part of MySQL.
+     * Know how current recovery sub-system works
+     * Modify the design if necessary, and design the recovery part
