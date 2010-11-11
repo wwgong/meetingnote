@@ -1,0 +1,22 @@
+#Meeting minutes of Meeting#15. 
+
+
+= Group Commit in MySQL =
+
+At first, I thought MySQL doesn't support group commit in its storage engines, but it turns out its statically-linked storage engine InnoDB doesn't support it, but additional upgraded 
+InnoDB Plugin does support it from 1.0.4.([http://dev.mysql.com/doc/innodb-plugin/1.0/en/innodb-performance-group_commit.html Introduction in MySQL Docs])
+
+I found this when I was trying to get understand how group commit works in PostgreSQL, there is post mentioned comparison between PostgreSQL and InnoDB. 
+
+
+= Useful Sites =
+Here are three very useful sites(blogs), their authors all work in Facebook, probably Database team.
+
+1. [http://mysqlha.blogspot.com/ High Availability] Author: Mark Callaghan
+
+2. [http://dom.as/ domas mituzas] Author: Domas Mituzas
+
+3. [http://www.facebook.com/MySQLatFacebook MySQL on Facebook]
+
+
+Also, the source code of PostgreSQL can be found here, and read online very clearly. [http://doxygen.postgresql.org/main.html Source of PG]
