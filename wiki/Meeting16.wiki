@@ -18,5 +18,11 @@ Here are three very useful sites(blogs), their authors all work in Facebook, pro
 
 3. [http://www.facebook.com/MySQLatFacebook MySQL on Facebook]
 
+4. [http://kristiannielsen.livejournal.com/ Kristian Nielsen]
+
+5. [http://blogs.innodb.com/wp/ Transactions on InnoDB]
+
+6. [http://mysqlmusings.blogspot.com/ MySQL Musing]
+
 
 Also, the source code of PostgreSQL can be found here, and read online very clearly. [http://doxygen.postgresql.org/main.html Source of PG]
