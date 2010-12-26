@@ -21,4 +21,3 @@
   * [Meeting14 10/21/2010] _(03:00PM, in Betty's Office)_.
   * [Meeting15 11/02/2010] _(03:00PM, in Betty's Office)_.
   * [Meeting16 11/09/2010] _(03:00PM, in Betty's Office)_.
-  * [GroupCommit Group Commit].
