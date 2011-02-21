@@ -22,4 +22,5 @@
   * [Meeting15 11/02/2010] _(03:00PM, in Betty's Office)_.
   * [Meeting16 11/09/2010] _(03:00PM, in Betty's Office)_.
   * [Meeting17 12/26/2010] _(10:00PM, in Pat's House)_.
+  * [NEDB11 01/28/2011] _(9:00AM-5:00PM, in MIT)_
   * [Meeting18 02/21/2011] _(10:30PM, in Pat's House)_.
