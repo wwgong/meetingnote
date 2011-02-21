@@ -1,0 +1,495 @@
+#Some simple notes for NEDB11'.
+
+=Predictable Performance for Unpredictable Workloads=
+
+==Amadeus==
+1. 600GB, singe denormalized table, ~50 attrs
+2. 4000 queries/second, latency guarantee: 2sec, pre-canned queries only
+3. 600 updates/second, peak 12000 updates, data freshness guarantee: 2sec
+
+==Why traditional dbms are a pain?==
+1. performance depends on workload parameters
+  * changes in update rate, queries → variance
+  * impossible/expensive to predict and tune correctly
+
+2. goals: 
+  * predictable constant performance
+  * meet slas—latency, data freshness
+  * affordable cost 1000 commodity servers
+  * meet consistency requirements—monotonic read and writes(ACID not needed)
+  * respect hardware trends
+
+3. it’s easier to optimize queries when know the data than optimize the data when do (not) know the queries
+
+==crescendo==
+===Features===
+1. a distributed(relational) table: MM on NUMA
+	* horizontally partitioned
+	* distributed within and across machines
+2.query interface
+	* select, update, monotonic reads/writes(SI within a single partition)
+3.properties: constant latency data freshness
+
+===Design===
+1.operate MM like disk in shared-nothing architect
+	* core ~ spindle many cores per machine & data center
+	* each core scans one partition of data all the time
+2.batch queries and updates: shared scans
+	* do trivial MQO at scan level on system with single table
+	* control read/update pattern->no data contention
+3.index queries / not data
+	* just as n the stream processing word
+	* predictable + optimizable: rebuild indexes every second
+4.updates are processed before reads
+
+==Implementation details==
+0. 
+  * Machine
+{{{
+input queue(operations) split
+each scan thread deal with each operation
+at the end, merge the result to produce output
+}}}
+  * Core
+    * Has Read Cursor, Write Cursor, and Write cursor is always 1 version before Read Cursor.
+1.optimization
+	* decide for batch of queries which indexes to build
+	* runs once every second
+2.query + update indexes
+	* fit in L2cache
+3.probe indexes
+4.persistence
+
+===sharedDB: query processor===
+0. shared group-by, shared join, shared sort, shared duplication elimination
+1. joins, group-bys, sorting
+{{{
+Q1,Q2,Q3 perform join on table R and S with R.id=S.id, 
+instead of doing 3 joins and then union their sub-results,
+push down selection, union, and do the join at the end
+}}}
+2. massive shring of operators of the same kind! same join, same sorting
+	* different queries but same kind, generated from same sql script
+3.natural extension of key crescendo idea
+
+===Sharing everyway===
+1. extended data model: query is a column
+2. distributed ata flow
+3. each operator optimized locally
+
+
+===Swissbox: putting it all together===
+1. outside: sharedDB
+
+2. component:
+   * barrelfish
+   * clockscan
+   * shareddb operator 
+   * e-cast
+
+3. design ideas:
+   * swissbox is an app
+   * exploit data/query duality: index queries, optimize with knowledge of query and data
+
+
+==conclusion==
+1. A new way to process queries
+	* massive parallel, simple, predictable
+	* massive sharing of scans and query processing
+	* not always optimal, but good enough
+2. Ideal for operational BI
+	* high throughput
+	* concurrent updates with freshness guarantees
+3. Great building block for many scenarios
+	* rethink database and storage system architecture
+
+
+=Provenance Everywhere=
+
+==The vision==
+  * all data has provenance
+  * applications,system,user generate provenance
+  * provenance is: secure, queryale, kibally searchable
+  * there are provenance-aware algorithm 	
+
+===Examples===
+{{{
+eg. campusmap.pdf from some website
+application provenance: browser, which website, time, etc
+os provenance: input-- tcp/ip
+}}}
+
+==Challenges==
+1. each system has different native objects
+    * os—files
+    * database—tuples 
+    * workflow—objects
+    * applications—variables,links or sessions, etc
+2. every system is myopic
+
+===Solution===
+1.data of different systems are related
+2.find the ancestor
+
+
+=CryptDB: A Pratical Encrypted Relational DBMS=
+
+===Data leaks from DBs===
+* hackers
+* curious DB administrators
+* physical attacks
+* both on public clouds and private center
+*regulatory laws
+
+==Approach==
+  * perform sql query processing on encrypted data
+{{{
+client end: trusted, master key, stores schema, no execution
+server: not trusted, execution
+
+data in server end encrypted, even for same value
+}}}
+
+===sql-aware encryption strategy(higher privacy to lower)===
+||schema	||operation	||details||
+||RND	||none		||AES in UFE||
+||HOM	||+,*		||eg. Pallier||
+||DET	||equality	||AES in CTR||
+||JOIN	||join		||new||
+||SEARCH||	||ILIKE||
+||OPE	||order||  ||	
+
+===onions of encryptions===
+  * RND .. DET .. SEARCH .. JOIN .. any value
+  * DET .. SEARCH ..
+  * OPE ..
+
+===adjustable query-based encryption===
+  * start out the database with most secure encryption schema
+  * adjust encryption dynamically
+
+
+=IFDB: Database Support for Decentralized Information Flow Control=
+  * information leaks
+    * cause: ad hoc security in app
+    * better design: put enforcement in the platform
+
+  * centralized IFC vs Decentralized IFC
+    * IFDB= relational database + decentralized information flow control
+
+  * app processes are contaminated by labels of tuples the read
+     * app can’t access if they contaminated too much labels
+
+  * insert duplicate tuples: abort—leak info; overwrite—dangerous; keep both—use integrity labels to avoid  confusion
+
+  * evaluation: 
+    * PresgreSQL + php
+    * Ported CarTel prototype and HotCRP to IFDB
+    * head tuple 4-6% larger
+    * TPC-W throughput 4% drop in CarTel
+
+
+
+=Dolly: Virtualization-Driven Database Provisioning for the Cloud=
+ * http://lass.cs.umass.edu/papers.html
+
+
+=Database in 21st Century: NimbusDB and the Cloud=
+
+  * Utopia: a managed database cloud
+
+===Requirements===
+  * durability, consistency, scalability, elasticity
+  * atomic transactions, SQL, multi-tenancy, separate provisioning and administration rights
+
+===baggage to avoid===
+   * avoidable transaction blockage, database inconsistency, single points of falure, application logic dependent on system configuration
+
+  * key problem: ACID transactions in the cloud
+    * strategies for managing consistency
+
+  * key requirements for the cloud
+    * acid transactions, elastic horizontal scalability, multi-tenancy, separate provisioning from internal administration
+
+  * wish list for the cloud
+    * sql, industry standard interfaces, redundant distributed storage, geo-dispersal, fault tolerance(hardware, network, software, human, and geologic)
+
+===NimbusDB===
+  * one or more transaction nodes to pump transactions?
+    * layered on distributed, demand loaded, replicating objects called “atoms”
+
+  * transaction node: execute sql, essentially diskless, atoms replicate to peers on other nodes
+
+  * archive nodes: serialize dirty atoms to a key/value store, source for atoms not resident in a chorus, final arbiter of transaction node commits
+
+  * communication: a chorus(nodes that implement a single database at any given instant) is fully connected, messaging is ordered batched and asynchronous, all links are encrypted, clients indirect through a connection broker
+
+  * atoms: demand loaded
+    * a node requiring an atom requests a copy from the most responsive node with the atom;
+    * atom instances know the location of all other instances;
+    * updates to an atom are broadcast to all other instances;
+    * a node is free to drop an unloved atom on the floor
+
+  * concurrency control: MVCC
+
+
+=On Schema Discovery=
+
+  * evolving role o scema
+    * old: prescriptive role: time-invariant portion of data, used to ensure data consistency
+    * new: descriptive role: evolve as semantics of data evolve, used to describe and understand data
+
+  * good schema
+    * old: minimizes redundancy
+    * new: understand data
+      * no longer assume data was “designed”
+      * may not have constraints enforced on it
+      * data may be result of integration or information extraction
+      * a table may contain more than one type of entity
+      * violations of constraints
+
+  * old dependencies: functional dependency, inclusion dependency
+  * new dependencies:
+    * rules may not hold over entire table
+    * conditional FD, subset
+
+===conditional FD===
+  * algorithmic framework: attribute partitions
+
+  * controlling the search
+    * limit support of conditioned rules: support threshold that al rules must satisfy
+    * permit approximation: allow a rule to have a exceptions, simply out
+    * convicition: p(x)p(~y)/p(x,~y) for rule X->Y
+
+===Constraint maintain===
+  * constraints may be inconsistent with data
+  * option: repair data, repair constraints
+
+{{{
+minimum description length(MDL) based odel that quantifies the consistency of the data
+DL=L(M)+L(I|M)
+L(M): length of model, L(I|M): length of data instance I given M
+data repair: X or Y values
+given violation t1: [X1Y1], t2:[X2Y2]
+}}}
+
+===Unified repaire model===
+  * consider the cost of data repairs
+      * starting from model, then select ne nstance unchanged cell cost 1, changed cost 2
+      * if domain natural distance metric: 1+distance, otherwise cost is 2
+      * tuple pattern
+
+  * constraint repair: starting from empty model
+      * minimal VI(VY, VYA)
+
+  * apply lower cost of repair
+
+
+==Table discovery==
+  * how to begin searching FDs in a big dataset
+    * depends on number of attributes, and number of values for each attribute
+    * statistic learning to get structural data approximately
+
+==Conclusion==
+  * schema discovery: need to be able to discover and maintain structural and semantic information that can help us understand and query data
+
+  * more flexible view of schemas
+    * support what-if style analysis: “if I believe that customers are uniquely identified by their phone number, zip code, and last name, then how many customers do I have?”
+    * postulate constraints that match your model of a domain: DBMS gives answers that are consistent with those constraints
+
+
+=Qurk: A Query Processor for Human Operators=
+
+  * HIT: human intelligence task
+    * partition big task to small pieces and let many people to do paralle
+
+  * Challenges in human computation:
+    * worker are not silicon drones
+    * optimization parameters and model are different
+    * qurk: human computation on relational data
+
+  * Data
+    * UDFs that compile to HTML forms
+    * List types: make relational with FLATTEN?UDAs
+        * eg. TASK  contactInfo(name, affiliation)
+             * Text:
+             * Response:
+    * flatten->normalize->pick majority vote
+
+  * System Design
+{{{
+Query->html->amazon turk->aggregate->query...
+}}}
+{{{
+MTurk<->HIT compiler
+HIT compiler->statistics manager->online optimizer
+HIT compiler<->task manager<->Async executor->storage engine
+}}}
+
+
+=Distributed CQL Made Easy=
+
+  * stream computing is every where
+    * popular  
+    * more and ore data means streaming SQL needs to scale:either across large NUMA machines or clusters
+
+  * Distributed CQL the hard way
+
+  * Easy way
+     * translate source language to an intermediate language
+     * optimize at IL level directly 
+     * map IL to an existing distributed runtime 
+
+  * many languages, many optimizations but few core, a few runtime
+  * explicit state, operator, optimization, communication
+
+  * IL vs parse plan
+     * arbitrary structure, not restrict to tree
+     * arbitrary operations, not restrict to relational operations 
+
+  * original  CQL: shared memory for operators and queues; centralized scheduler
+  * River CQL: operator local memory; each operator has its own thread and synchronization logic
+  * Impact: doesn’t need distributed shared memory, increased parallelism
+
+  * Using properties for parallelization
+{{{
+range->aggr->istream
+⇒ range->merge->split->aggr->merge->split->istream
+⇒  range->merge->split->aggr->istream
+⇒ range->split->merge->aggr->istream
+System S: map River to it
+works, but limited parallelization
+}}}
+  
+  * works also for language: streamit, sawzall
+
+  * cs.nyu.edu/brooklet
+
+
+=SciDB: Towards a Terabyte Matrix Multiply=
+
+==Machine generated data==
+  * all modern “big science”: astronomy, physics, genomics
+  * data management tools that support: 
+     * capture(store, read the data), 
+     * curation(raw, cooked and analytic data, with provenance), 
+     * curiosity(data manipulation and analytic workbench), 
+     * collaboration(shared resource)
+
+==Architecture==
+  * shared-nothing cluster
+  * each node has a processor and storage
+  * location transparency: distribution details not needed in queries
+  * query planner optimizes queries for efficient data access and processing 
+  * query plan runs on a node’s local executor and storage manager
+  * runtime supervisor coordinates execution
+  * quality of service: failover, elasticity, minimal admin
+
+  * array query language
+    * update support with no-overwrite
+    * user-defined types and functions
+    * 1TB multiply
+    * linear algebra: matrix multiply
+    * model of many statistical operations
+    * mind boggling numbers
+
+  * Data analytics requirements
+    * Orthodox data manipulation (SQL-ish)
+    * large scale(TB) numerical processing
+
+  * TeraMul: dollar cost of multiplying a 1T square matrix by its transpose
+
+   * matrix multiply can be done in hardoop(google)
+ 
+
+=Using Learning Models for Query Performance Prediction=
+
+  * query performance prediction(QPP)
+  * predict query latency before execution  
+      * useful for workload scheduling, resource allocation
+
+  * analytical cost models fail!
+      * 1.	i/o and cpu overlap
+           {{{cost= # tuple * cpu constant + # page * i/o constant}}}
+      * 2.	shared i/o
+{{{cost = # tuple * cpu constant + # page * i/o constant + # page * i/o constant}}}
+  * analytical cost model are poor predictors for latency
+
+  * learning-based QPP
+      * traning process: data collection(query execution)-data etraction(features and execution times) – model building(feature selection, cross validation) – prediction models and accuracy values
+      * prediction process:
+
+  * plan-level modeling
+      * query execution with performance logging
+      * feature extraction
+      * modeling and prediction
+
+  * operator-level modeling
+
+  * hybrid modeling
+
+
+  * QPP under concurrency
+    * challenge: multi-programming languages?  MPL
+
+  * pairwise interactive
+
+=Automated Physical Database Design in Column Stores=
+
+  * column stores for analytic workloads
+      * disk i/o density
+      * per-column compression
+
+  * physical data layout
+      * row store: indices, materialized views
+      * column store: projections
+          * segmentation across the db cluster
+          * sort order
+          * compression schemes per column
+ 
+  * projection design
+    * input workload: tables, queries
+    * output workload: 1 + projections per table
+    * goals: optimize for queries, minimize storage footprint
+
+  * the workload scalability challenge
+      * internet gaming
+      * telecomm
+      * financial services
+
+  * the database designer
+      * optimize for queries
+         * cover all query features
+         * invoke the optimizer for quality assessment
+      * optimize for storage
+         * identify the best compression schemes
+         * leverage functional dependencies
+
+  * workflows & use cases
+
+  * lessons learned
+    * expert users prefer to be “naive”
+    * task less, deliver more
+    * innovate
+
+=Dynamic Prioritization of Database Queries=
+
+  * motivation: 
+    * mixed workloads: oltp, reporting queries, ad-hoc analytic queries
+    * goal: resources usage in line with business value
+
+  * simplified model
+      * query->one process
+      * multiple cpu or cores
+      * queries compete for cpu
+      * query has a weight(priority)
+
+  * why cpu?
+      * disk/cpu config balanced
+      * shared scans
+      * in-memory database
+
+  * two-part solution
+      * target cpu rate: fairness and utilization
+      * achieving the target: feedback loop
+            * do real work -> compute actual cpu usage -> modify sleep time -> sleep -> …
