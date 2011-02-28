@@ -1,0 +1,101 @@
+#Meeting minutes of Meeting#18. 
+
+
+= Meeting Note =
+
+===1. Flush log time interval===
+In MySQL, the system global variable *"innodb_flush_log_at_trx_commit"* allows user to specify how to flush log. There are 3 values available(0, 1, and 2), 1 is the default value which is the only one could guarantee ACID.
+
+|| value || log buffer || log file || possible data lost ||
+|| 0 || written out to log file once per second || flush to disk operation is performed on the log file one per second || any mysqld process crash can erase the last second of transactions ||
+|| 1 || written out to log file at each transaction commit || flush to disk operation is performed on the log file at each transaction commit || none ||
+|| 2 || written out to log file at each commit || flush to disk operation is performed on log file once per second || only an operating system crash or a power outage can erase the last second of transactions ||
+
+Inside the MySQL, the implementation of three options:
+|| value || action ||
+|| 0 || do nothing ||
+|| 1 || write the log to log file, whether flush to disk based on setting ||
+|| 2 || write the log to log file, but do not flush to disk ||
+
+Note: the once-per-second flushing is not guaranteed to happen every second.
+
+===2. Flush method===
+In MySQL, the system global variable *"innodb_flush_method"* allows user to specify which flush method to use. The default method to flush data and log file is *fsync()*, but there are more options available
+
+|| method || open data file || flush data file || open log file || flush log file ||
+|| default || N/A || fsync() || N/A || fsync() ||
+|| O_DSYNC || N/A || fsync() || O_SYNC || O_SYNC ||
+|| O_DIRECT || O_DIRECT/directio() || fsync() || N/A || fsync() ||
+
+  * O_SYNC: file is opened for synchronous I/O. Any write(2)s on the resulting file descriptor will block the calling process until the data has been physically written to the underlying hardware.
+  * O_DIRECT(un-buffered read/write access?): Try to minimize cache effects of the I/O to and from this file. In general this will degrade performance, but it is useful in special situations, such as when applications do their own caching. File I/O is done directly to/from user space buffers. The flag on its own makes at an effort to transfer data synchronously, but does not give the guarantees of the O_SYNC that data and necessary metadata are transferred. To guarantee synchronous I/O the O_SYNC must be used in addition to O_DIRECT.[http://www.kernel.org/doc/man-pages/online/pages/man2/open.2.html link]
+{{{
+with O_DIRECT the kernel will do DMA directly from/to the physical memory 
+pointed [to] by the userspace buffer passed as [a] parameter to the read/write 
+syscalls. So there will be no CPU and memory bandwidth spent in the copies 
+between userspace memory and kernel cache, and there will be no CPU time spent 
+in kernel in the management of the cache (like cache lookups, per-page locks etc)
+}}}
+  * Note1: InnoDB uses fsync() instead of fdatasync() which doesn't flush file's metadata, because they found that fdatasync() caused corruption in some cases reported in 2001 and fsync() is safer. (explanation from the book High performance MySQL, and one post from MySQL mail archive, but in the same post they also mentioned MySQL maps fdatasync() to fsync() later, one evidence is that in the Administration Reference, to flush binlog, it uses fdatasync())
+  * Note2: InnoDB doesn't use O-DSYNC by default because there have been problems on many varieties of Unix.
+
+===3. tmpfs===
+_Discuss tmpfs on Linux only._ (
+[http://www.kernel.org/doc/Documentation/filesystems/tmpfs.txt tmpfs on Linux], 
+[http://www.ibm.com/developerworks/library/l-fs3.html How to use tmpfs])
+
+  * What is tmpfs
+    * a memory-based file system
+  * Features
+    * tmpfs files exist solely in virtual memory maintained by the UNIX kernel
+    * tmpfs files are not differentiated from other uses of physical memory
+    * tmpfs is free to allocate all but 4MB of the system’s swap space
+    * default maximum filesystem size of tmpfs is half of the available RAM 
+
+To prevent out of memory situations tmpfs enforces a maximum filesystem size, this limit defaults to half of the available RAM.[4] The limit can be set at mount time, for example "mount -t tmpfs -o size=1G,nr_inodes=10k,mode=0700 tmpfs /space" would mount with a 1 GiB limit with 10240 inodes and only accessible by the owner of /space. The filesystem's maximum size can also be changed on-the-fly, like "mount -o remount,size=2G /space".
+
+/var/run and /var/lock can be tmpfs filesystems, to alleviate having to clean them up at each reboot.
+
+  * Usage
+    * mount tmpfs: mount -t tmpfs -o OPTION  DEV DIR
+{{{
+size: maximum size(bytes) for this tmpfs instance
+      default value is half of the available RAM 
+      if oversized, the machine will deadlock
+nr_blocks: maximum size in blocks of PAGE_CACHE_SIZE
+nr_inodes: maximum number of inodes for this tmpfs instance
+           default if half of the number of RAM pages
+mode: the permissions as an octal number
+uid: the user id 
+gid: the group id
+}}}
+    * change size: mount -o remount, size=SIZE DIR
+    * unmount: unmount DIR
+
+===4. innobase_commit() ===
+With default fdatasync. It can be divided into three parts.
+  * Fast part: innobase_commit_low()
+{{{
+change undo log segment status
+update binlog info (optional)
+commit the mini-trx
+mark trx to "COMMITTED_IN_MEMORY"
+}}}
+  * Release mutex: prepare_commit_mutex()
+  * Slow part: trx_commit_complete_for_mysql()
+{{{
+one trx write log for current waiting group to log file and flush to disk
+}}}
+
+There are 2 places we need to fsync files
+  * one is committing the mini-trx which recording all actions involved in the process of committing the trx
+  * the other one is writing the log to log file and flush to disk. 
+
+I calculated how many fsync() called in above three steps
+  * this number is the total number without considering duplications
+  * actual number is much more smaller
+  * mtr_commit() which commits the mini-trx calls over 300 fsync()
+  * each log_write_up_to() calls 54 fsync()s
+
+
+=Revise [http://code.google.com/p/meetingnote/wiki/Meeting15 meeting notes #15]=
