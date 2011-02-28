@@ -52,10 +52,6 @@ _Discuss tmpfs on Linux only._ (
     * tmpfs is free to allocate all but 4MB of the system’s swap space
     * default maximum filesystem size of tmpfs is half of the available RAM 
 
-To prevent out of memory situations tmpfs enforces a maximum filesystem size, this limit defaults to half of the available RAM.[4] The limit can be set at mount time, for example "mount -t tmpfs -o size=1G,nr_inodes=10k,mode=0700 tmpfs /space" would mount with a 1 GiB limit with 10240 inodes and only accessible by the owner of /space. The filesystem's maximum size can also be changed on-the-fly, like "mount -o remount,size=2G /space".
-
-/var/run and /var/lock can be tmpfs filesystems, to alleviate having to clean them up at each reboot.
-
   * Usage
     * mount tmpfs: mount -t tmpfs -o OPTION  DEV DIR
 {{{
@@ -231,8 +227,6 @@ trx_list: initialize an empty list
     -- Look up the eid in the escrow table.
 
     -- Go through its escrow_trx_list to find the trx_node_t node based on txid.
-
-    -- Request its own escrow_trx_node_t's trx_mutex.
 
     -- Set status to "finished".
 
