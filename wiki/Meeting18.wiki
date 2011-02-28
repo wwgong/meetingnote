@@ -99,3 +99,47 @@ I calculated how many fsync() called in above three steps
 
 
 =Revise [http://code.google.com/p/meetingnote/wiki/Meeting15 meeting notes #15]=
+
+==The original meeting notes by Betty==
+
+Assuming group commit is working.
+  * A group commit is an atomic action
+{{{
+write the log for the group commit
+advance the pointer to the end of the log to make it legitimate
+}}}
+
+Escrow data in memory:
+  * eid, inf, sup, committed-val 
+    * The committed-val reflects the contributions made by user thread commits, possibly not yet on log disk. 
+    * The committed-val corresponding to a group commit start-time will be written with the log records in a group commit.  
+    * Inf and sup reflect changes made by transactions not yet committed by user thread commits.
+
+Log records
+  * Copy escrow memory data to log entry at each group commit. 
+  * The memory data needed is just {eid, committed-val} as of the time just after the transactions in the group commit.
+
+Recovery:
+  * find the last successful group commit disk block
+  * copy the escrow data there to memory
+  * making inf = sup = committed-val
+
+App actions:
+  * escrow request by tid: 
+     * change inf, sup, fail if appropriate
+     * Remember eid, delta in memory, as part of transaction tid’s structure.
+  * commit by tid: 
+    * add sum of deltas for each eid (for this tid) to committed-val in escrow memory data, adjust inf, sup
+    * Make the user thread  tid wait for group commit to finish.
+
+Group commit:
+  *Consider the time when a group of almost-committed transactions are awaiting group commit.  
+  * Their commit log entries are in the log buffer but it hasn’t yet been written to disk.
+    * --stop application commits
+    * --copy the escrow memory data to the pre-allocated area in the old log buffer
+    * --schedule this buffer for write
+    * --cut over to the new log buffe, pre-allocating its escrow data area
+    * --restart application commits
+    * --when write completes, signal the user threads
+
+==Revised MeetingNote15==
