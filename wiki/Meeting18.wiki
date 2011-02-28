@@ -133,7 +133,7 @@ App actions:
     * Make the user thread  tid wait for group commit to finish.
 
 Group commit:
-  *Consider the time when a group of almost-committed transactions are awaiting group commit.  
+  * Consider the time when a group of almost-committed transactions are awaiting group commit.  
   * Their commit log entries are in the log buffer but it hasn’t yet been written to disk.
     * --stop application commits
     * --copy the escrow memory data to the pre-allocated area in the old log buffer
@@ -143,3 +143,151 @@ Group commit:
     * --when write completes, signal the user threads
 
 ==Revised Meeting Note #15==
+
+#Meeting minutes of Meeting#15. 
+
+
+= Revised system design for Escrow in MySQL =
+
+=== 1. What information need to be stored? ===
+
+For each record in Escrow table(will be updated by Escrow transactions later), there is one corresponding variable of type *escrow_cell_struct* in the system. Here is the definition of *escrow_cell_struct*:
+
+  * eid (type: int)
+  -- The identity number of the record. eg, in Coca-cola example, this field can be the pid of the product. 
+
+  -- To simplify problem, let this field be integer type data.
+
+  * escrow_fields (type: escrow_fields_t)
+  -- This struct contains val/inf/sup, most important to implement Escrow
+{{{
+typedef struct escrow_fields_struct escrow_fields_t;
+
+struct escrow_fields_struct {
+  int	 inf;
+  int	 committed-val;
+  int	 sup;
+};
+}}}
+
+  * mutex
+  -- To ensure only one trx can access this record at one time. 
+  -- Use the kernel mutex in MySQL instead.
+
+  * trx_list (type: UT_LIST_BASE_NODE_T(escrow_trx_node_t))
+  -- This list is a double-linked list, includes all running transactions and committing transactions.
+{{{
+typedef struct escrow_trx_node_struct escrow_trx_node_t;
+
+struct escrow_trx_node_struct {
+	int		txid; 		// the txid stored in this transaction's trx_t
+	int		delta;          // the amount this trx wants to apply on the record
+	enum_status	status;		// only have 2 types, "running" and "finished"
+	mutex_t*	trx_mutex;	// the mutex to protect current trx node, the reason we need it is we want 
+					// to block it until its update is done by some other
+	UT_LIST_NODE_T(escrow_trx_node_t)	neighbores;
+};
+}}}
+
+
+=== 2. How to manage this information? ===
+
+  * a. When to create the data struct for each record?
+  -- When the server starts, we need to initialize one table(array of escrow_cell_struct type) for each escrow table.
+{{{
+eid: the eid of the record
+escrow_fields: inf = val = commit-val = current value of the field in the record
+trx_list: initialize an empty list
+}}}
+  -- After the server starts, whenever an Escrow type transactions wants to update the escrow field, we insert one escrow_cell_struct type data to corresponding table.
+
+  -- Keep the escrow_cell_struct in the buffer while the system is up
+
+  -- Keep one copy of (eid, committed-val) in the log buffer
+
+  * b. When to update it?
+  -- We need to consider it when transactions starts, ends(commit or abort) and when doing group commit, details in next section.
+
+=== 3. When and how to manage one _escrow_cell_struct_? ===
+
+  * Whenever an Escrow transaction starts to update the record, things need to do to its corresponding escrow_cell_struct data:
+
+    -- Look up the escrow table to get its corresponding escrow_cell_struct based on the eid.
+
+    -- If there is no escrow_cell_struct data created yet, create one, initialize it, and insert one trx_node_t type data with its txid to the trx_list.
+
+    -- Otherwise, create one trx_node_t type data with its txid, and add it to trx_list, the amount it wants to update, and set status to "running".
+
+    -- Request its own trx_mutex.
+
+    -- Request kernel mutex.
+
+    -- Modify inf/sup in escrow_fields
+
+    -- Release kernel mutex.
+
+  * Whenever an Escrow transaction commits.
+
+    -- Look up the eid in the escrow table.
+
+    -- Go through its escrow_trx_list to find the trx_node_t node based on txid.
+
+    -- Request its own escrow_trx_node_t's trx_mutex.
+
+    -- Set status to "finished".
+
+    -- Modify inf/sup in escrow_fields (see the method introduced in Pat's paper).
+
+    -- Release kernel mutex.
+
+    -- Release its trx_mutex.
+
+  * Whenever an Escrow transaction aborts.
+
+    -- Look up the eid in the escrow table.
+
+    -- Go through its escrow_trx_list to find the trx_node_t node based on txid.
+  
+    -- Request kernel mutex.
+
+    -- Modify inf/sup in escrow_fields (see the method introduced in Pat's paper).
+
+    -- Release kernel mutex.
+
+    -- Release its trx_mutex.
+
+    -- Remove its trx node from escrow_trx_list.
+
+  * Whenever group commit.
+
+    -- For each escrow_cell_struct data in each escrow table.
+
+    -- Go through its trx_list to get the "net amount"(sum up the delta) from all "finished" marked trx nodes, and remove all "finished" marked nodes
+
+    -- Update the committed-val in the escrow_cell_struct
+
+    -- Do real update to the base table.
+{{{
+update the table with net amount
+  write log
+    -- update escrow data(eid, committed-val)
+    -- flush the escrow data
+    -- flush the log entries
+  write data
+}}}
+
+
+=== 4. Trigger group commit===
+
+  * Option 1
+{{{
+a. work on innodb_flush_log_at_trx_commit = 2
+b. before disk flush happens, insert the work "group commit" described above there
+}}}
+
+  * Option 2
+{{{
+a. create another thread
+b. in the log entry of each escrow transaction, there is no evidence about data update
+c. let the thread to new one trx to handle each group commit with data update record
+}}}
