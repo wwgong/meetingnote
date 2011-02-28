@@ -100,7 +100,7 @@ I calculated how many fsync() called in above three steps
 
 =Revise [http://code.google.com/p/meetingnote/wiki/Meeting15 meeting notes #15]=
 
-==The original meeting notes by Betty==
+==Original Meeting Note by Betty==
 
 Assuming group commit is working.
   * A group commit is an atomic action
