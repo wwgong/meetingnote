@@ -1,0 +1,174 @@
+= Exact Expression Values in UPDATE=
+
+===1. important variables analysis===
+  *
+{{{
+row_upd()
+    arguments:
+        upd_node_t* node
+        que_thr_t* thr
+}}}
+  *
+{{{
+row_upd_step()
+    arguments:
+        que_thr_t*    thr
+    parameters for row_upd():
+        node = thr->run_node = prebuilt->upd_node
+        thr
+}}}
+  *
+{{{
+row_update_for_mysql()
+    arguments:
+        byte* mysql_rec
+        row_prebuilt_t* prebuilt
+    parameters for row_upd():
+        thr = que_fork_get_first_thr(prebuilt->upd_graph)
+    node = prebuilt->upd_node
+    thr->run_node = thr->prev_node = node = prebuilt->upd_node
+}}}
+  *
+{{{
+ha_innobase::update_row()
+    arguments:
+        const uchar* old_row
+        uchar* new_row
+    parameters for row_update_for_mysql():
+        (byte*) old_row
+        prebuilt: struct built when server starts
+}}}
+  *
+{{{
+handler::ha_update_row()
+    arguments:
+        const uchar *old_data
+        uchar *new_data
+    parameters for update_row()
+        old_data
+        new_data
+}}}
+
+
+  *
+{{{
+mysql_update()
+    arguments:
+        THD *thd
+        TABLE_LIST *table_list
+        List<Item> &fields
+	List<Item> &values
+        COND *conds
+        uint order_num, ORDER *order
+	ha_rows limit
+	enum enum_duplicates handle_duplicates
+        bool ignore
+    parameters for ha_update_row():
+        table->record[1] = table_list->table->record[1]
+        table->record[0] = table_list->table->record[0]
+}}}
+  *
+{{{
+mysql_execute_command()
+    arguments:
+        THD *thd
+    parameters for mysql_update():
+        thd
+        all_tables = thd
+        select_lex->item_list = thd->lex->select_lex->item_list
+        lex->value_list = thd->lex->value_list
+        select_lex->where = thd->lex->select_lex->where
+        select_lex->order_list.elements = thd->lex->select_lex->order_list.elements
+        select_lex->order_list.first = thd->lex->select_lex->order_list.first
+        unit->select_limit_cnt = thd->lex->unit->select_limit_cnt
+        lex->duplicates = thd->lex->duplicates
+        lex->ignore = thd->lex->ignore
+}}}
+  *
+{{{
+mysql_parse()
+    arguments:
+        THD *thd
+        char *rawbuf
+        uint length
+        const char ** found_semicolon
+    parameters for mysql_execute_command():
+        thd
+}}}
+
+
+===2. UPDATE statement===
+
+  * UPDATE TEST SET VAL1 = VAL2 - 100 WHERE ID = 2
+{{{
+2: conds->next->name
+ID: conds->next->next->name
+100: conds->next->next->next->next->name
+VAL2: conds->next->next->next->next->next->name
+VAL1: conds->next->next->next->next->next->name
+}}}
+
+
+  * UPDATE TEST SET VAL = 64 WHERE ID = 2
+{{{
+2: conds->next->name
+ID: conds->next->next->name
+64: conds->next->next->next->name
+VAL: conds->next->next->next->next->name
+}}}
+
+  * calc_row_difference() update prebuilt->upd_node->update
+{{{
+old val = (byte*) old_row + get_field_offset(table, table->field[NUM]);
+new val = (byte*) new_row + get_field_offset(table, table->field[NUM]);
+}}}
+
+===3. Implementation details===
+  * Instead of implementing in Storage Engine level, we could get all information needed on SQL level, and it's easier to get "delta" on SQL level.
+
+  * sql\item.h
+{{{
+class Item
+--add virtual function
+virtual function const char *func_name() const {return "";}
+}}}
+
+  * sql\sql_base.cc
+{{{
+--add function
+bool get_escrow_info(List<Item> &fields, List<Item> &values,
+                     const char *name, const char *op, const char *val)
+{
+  List_iterator_fast<Item> f(fields),v(values);
+  Item *value, *fld;
+  Item_field *field;
+  DBUG_ENTER("get_escrow_info");
+
+  if (fields.elements)
+  {
+    fld= (Item_field*)f++;
+    if (!(field= fld->filed_for_view_update()))
+    {
+      my_error(ER_NONUPDATEABLE_COLUMN, MYF(0), fld->name);
+      return TRUE;
+    }
+    value=v++;
+    name = field->field->field_name;
+    val = value->next->name;
+    op = value->func_name();
+
+    return TRUE;
+  }
+  return TRUE;
+}
+
+}}}
+
+  * All information needed to add a escrow_trx_node_struct to escrow_cell_struct
+{{{
+int eid: conds->next->name
+
+int txid: thd_to_trx(thd)->id
+int delta: convert from op and val got from get_escrow_info()
+enum_status status: initial status always RUNNING
+}}}
