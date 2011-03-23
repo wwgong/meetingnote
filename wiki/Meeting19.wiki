@@ -1,4 +1,4 @@
-= Exact Expression Values in UPDATE=
+= Exact Expression Values from UPDATE=
 
 ===1. important variables analysis===
   *
@@ -136,8 +136,8 @@ virtual function const char *func_name() const {return "";}
   * sql\sql_base.cc
 {{{
 --add function
-bool get_escrow_info(List<Item> &fields, List<Item> &values,
-                     const char *name, const char *op, const char *val)
+bool get_escrow_update_info(List<Item> &fields, List<Item> &values,
+                           const char *name, const char *op, const char *val)
 {
   List_iterator_fast<Item> f(fields),v(values);
   Item *value, *fld;
@@ -157,12 +157,12 @@ bool get_escrow_info(List<Item> &fields, List<Item> &values,
     val = value->next->name;
     op = value->func_name();
 
-    return TRUE;
+    return FALSE;
   }
   return TRUE;
 }
-
 }}}
+
 
   * All information needed to add a escrow_trx_node_struct to escrow_cell_struct
 {{{
