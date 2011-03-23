@@ -130,7 +130,7 @@ new val = (byte*) new_row + get_field_offset(table, table->field[NUM]);
 {{{
 class Item
 --add virtual function
-virtual function const char *func_name() const {return "";}
+virtual function const char *func_name() const {return "Item";}
 }}}
 
   * sql\sql_base.cc
