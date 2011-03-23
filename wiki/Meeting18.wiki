@@ -179,8 +179,6 @@ struct escrow_trx_node_struct {
 	int		txid; 		// the txid stored in this transaction's trx_t
 	int		delta;          // the amount this trx wants to apply on the record
 	enum_status	status;		// only have 2 types, "running" and "finished"
-	mutex_t*	trx_mutex;	// the mutex to protect current trx node, the reason we need it is we want 
-					// to block it until its update is done by some other
 	UT_LIST_NODE_T(escrow_trx_node_t)	neighbores;
 };
 }}}
@@ -214,8 +212,6 @@ trx_list: initialize an empty list
 
     -- Otherwise, create one trx_node_t type data with its txid, and add it to trx_list, the amount it wants to update, and set status to "running".
 
-    -- Request its own trx_mutex.
-
     -- Request kernel mutex.
 
     -- Modify inf/sup in escrow_fields
@@ -234,8 +230,6 @@ trx_list: initialize an empty list
 
     -- Release kernel mutex.
 
-    -- Release its trx_mutex.
-
   * Whenever an Escrow transaction aborts.
 
     -- Look up the eid in the escrow table.
@@ -247,8 +241,6 @@ trx_list: initialize an empty list
     -- Modify inf/sup in escrow_fields (see the method introduced in Pat's paper).
 
     -- Release kernel mutex.
-
-    -- Release its trx_mutex.
 
     -- Remove its trx node from escrow_trx_list.
 
