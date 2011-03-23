@@ -7,8 +7,8 @@
 In MySQL, the system global variable *"innodb_flush_log_at_trx_commit"* allows user to specify how to flush log. There are 3 values available(0, 1, and 2), 1 is the default value which is the only one could guarantee ACID.
 
 || value || log buffer || log file || possible data lost ||
-|| 0 || written out to log file once per second || flush to disk operation is performed on the log file one per second || any mysqld process crash can erase the last second of transactions ||
-|| 1 || written out to log file at each transaction commit || flush to disk operation is performed on the log file at each transaction commit || none ||
+|| 0 || written out to log buffer once per second || flush to disk operation is performed on the log buffer one per second || any mysqld process crash can erase the last second of transactions ||
+|| 1 || written out to log buffer at each transaction commit || flush to disk operation is performed on the log file at each transaction commit || none ||
 || 2 || written out to log file at each commit || flush to disk operation is performed on log file once per second || only an operating system crash or a power outage can erase the last second of transactions ||
 
 Inside the MySQL, the implementation of three options:
