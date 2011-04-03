@@ -1,0 +1,32 @@
+Implementation Steps
+1. System buffer
+  * add escrow data -- global data
+  * init
+  * maintain
+
+2. Query process
+  * identify escrow update
+  * mark escrow update
+  * get escrow update info
+  * skip later original update process
+
+3. Log buffer
+  * add escrow data entries((eid,val) pairs)
+  * write out escrow data when flush log
+  * read latest escrow data from log when system start
+
+4. Trigger group commit
+  * 
+
+
+
+===Init escrow data when server starts===
+
+
+1. Init escrow data when server starts
+  * idea: using the hard-coded table name and field names to get (id, val) and store them into the created escrow cells -- that is to sequentially scan the table
+  * problem:
+     * on SQL level(above storage engine): necessary structs need to be filled up, however we can just fire a select command to get all of them. the problem is, escrow data is kept in the system buffer of innodb which is on the storage engine level
+     * on storage engine level: table scan works on a finer granularity, that is on row level, then the only struct used is of type pointer of row_prebuilt_t, however, some necessary info must be filled in advance which is on SQL level. so far, I think it's complicated and dangerous to modify prebuilt. also, the result returned is in MySQL row format, might need some transformation not implemented on storage engine level too
+     * so, to keep the escrow data on the storage engine level and initialize escrow data when server starts, one method is to fire the command on SQL level, get the result and then go into the storage engine level again to store them in the escrow struct, that means we need to cross SQL and storage engine level twice for each row(or could be optimized to do it as a whole).
+     * right now, manually fill the escrow data
