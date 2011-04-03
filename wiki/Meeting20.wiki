@@ -1,8 +1,8 @@
-Implementation Steps
+=Implementation Steps=
 1. System buffer
   * add escrow data -- global data
-  * init
-  * maintain
+  * init escrow data
+  * maintain escrow data
 
 2. Query process
   * identify escrow update
@@ -13,20 +13,146 @@ Implementation Steps
 3. Log buffer
   * add escrow data entries((eid,val) pairs)
   * write out escrow data when flush log
-  * read latest escrow data from log when system start
+  * read latest escrow data from log file when system start
 
 4. Trigger group commit
-  * 
 
 
+==Query Process==
+1. Identify escrow update
+  *Idea: compare the table name and field name in the update statement with specific table name and field name.
+     * Here, table name = "escrow", and field name = "val", the condition is field name = "id".
 
-===Init escrow data when server starts===
+2. Mark escrow update
+  * Even though system provides function thd_to_trx(THD) to get current trx inside given thread, this is only available on innobase handler level.
+  * And, the data type of txid is only defined inside innobase, not even accessible from innobase handler, we use the convert function to transform it to general C type data.
+  * Thus, go down from SQL-handler-innobase handler-innobase
+     * sql/handler.h
+{{{
+virtual longlong mark_escrow_update()
+{
+   return (longlong)0;
+}
+}}}
+    * storage/innobase/handler/ha_handler.c
+{{{
+longlong ha_innobase::mark_escrow_update()
+{
+	trx_t*		trx = thd_to_trx(user_thd);
+	return set_escrow_for_trx(trx);
+}
+}}}
+    * storage/innobase/row/row0mysql.c
+       * NOTE: since escrow type is only for update statement, instead to add this function under trx package, add it to the row0mysql.c which contains the entry of original update row process.
+{{{
+longlong set_escrow_for_trx(trx_t* trx)
+{
+	trx->is_escrow = 1;
 
+	return ut_conv_dulint_to_longlong(trx->id);
+}
+}}}
 
-1. Init escrow data when server starts
-  * idea: using the hard-coded table name and field names to get (id, val) and store them into the created escrow cells -- that is to sequentially scan the table
-  * problem:
+3. Get escrow update info
+  * There are 3 fields/val need to get
+      * name: double check, name of updating field (must be "val" otherwise error occurs here)
+      * delta: the absolute value of delta
+      * op: the sign of delta
+      * eid: the value of id
+  * MySQL doesn't keep sign and the value of the delta we want together, because derived sub class could identify which operation(plus, subtract, etc), so we need to get those two fields separately.
+     * get_escrow_update_info() in sql/sql_base.cc
+
+4. Skip later process
+  * At the beginning of mysql_update(), it locks the table for read and later unlock rows which are not under the condition constraint
+  * Thus, after we get the escrow update information, we need to update the escrow data and then just return.
+  * Since the escrow data is on the innobase level, thus we have to pass (eid, op, delta, txid) along to innobase level function to handle this
+      * sql/handler.h
+{{{
+virtual int update_escrow_data(longlong txid, char* eid, char* op, char* delta)
+{
+    return DEUG_RETURN(FALSE);
+}
+}}}
+      * storage/innobase/handler/ha_handler.c
+      * storage/innobase/row/row0mysql.c
+      * will be combined with mark escrow update
+
+==System buffer==
+
+1. Add escrow data
+  * escrow data is global so that all functions on storage engine level should be able to access it
+  * srv0srv.h
+{{{
+typedef struct escrow_fields_struct escrow_fields_t;
+struct escrow_fields_struct {
+  int    inf;
+  int    committed_val;
+  int    sup;
+};
+
+enum STATUS {
+	RUNNING = 0,
+	FINISHED
+};
+
+typedef struct escrow_trx_node_struct escrow_trx_node_t;
+struct escrow_trx_node_struct {
+        longlong		txid;
+        int				delta;
+        enum STATUS		status;
+        UT_LIST_NODE_T(escrow_trx_node_t)	node_list;
+};
+
+typedef struct escrow_cell_struct escrow_cell_t;
+struct escrow_cell_struct {
+	int eid;
+	escrow_fields_t escrow_fields;
+	UT_LIST_BASE_NODE_T(escrow_trx_node_t) trx_list;
+	UT_LIST_NODE_T(escrow_cell_t) cell_list;
+};
+
+typedef struct escrow_data_struct escrow_data_t;
+struct escrow_data_struct {
+	UT_LIST_BASE_NODE_T(escrow_cell_t) escrow_cells;
+};
+
+extern escrow_data_t *escrow_shd;
+}}}
+
+2. Init escrow data when server starts
+  * Idea: using the hard-coded table name and field names to get (id, val) and store them into the created escrow cells -- that is to sequentially scan the table
+  * Problem:
      * on SQL level(above storage engine): necessary structs need to be filled up, however we can just fire a select command to get all of them. the problem is, escrow data is kept in the system buffer of innodb which is on the storage engine level
      * on storage engine level: table scan works on a finer granularity, that is on row level, then the only struct used is of type pointer of row_prebuilt_t, however, some necessary info must be filled in advance which is on SQL level. so far, I think it's complicated and dangerous to modify prebuilt. also, the result returned is in MySQL row format, might need some transformation not implemented on storage engine level too
-     * so, to keep the escrow data on the storage engine level and initialize escrow data when server starts, one method is to fire the command on SQL level, get the result and then go into the storage engine level again to store them in the escrow struct, that means we need to cross SQL and storage engine level twice for each row(or could be optimized to do it as a whole).
-     * right now, manually fill the escrow data
+     * thus, to keep the escrow data on the storage engine level and initialize escrow data when server starts, one method is to fire the command on SQL level, get the result and then go into the storage engine level again to store them in the escrow struct, that means we need to cross SQL and storage engine level twice for each row(or could be optimized to do it as a whole).
+     * right now, manually fill the escrow data; if necessary, switch to the method described above.
+
+3. Maintain escrow data
+  * Insert new entry(one item of type escrow_trx_node_t for sure, maybe one item of type escrow_cell_t) and modify inf/sup when a new trx request comes -- combined with skipping original query process.
+  * When group committing, remove nodes of type escrow_node_t which committed, and modify inf/committed_val/sup. -- combined with trigger group commit.
+
+==Log buffer==
+1. Add escrow data
+  * storage/innobase/include/log0log.h
+{{{
+typedef struct escrow_log_struct escrow_log_t;
+struct escrow_log_struct {
+	int eid;
+	int committed_val;
+	UT_LIST_NODE_T(escrow_log_t) entry;
+};
+
+-- add new member to struct log_struct and recv_sys_struct
+     UT_LIST_BASE_NODE_T(escrow_log_t) escrow_log_data;
+}}}
+  * does the escrow_log_data point to the same place as escrow_shd of escrow_data_t in the system buffer pool to avoid synchronisation, or introduce a new mechanism to synchronise them? it should be first option, because system buffer and log buffer are separate and should not have data in different buffer referencing each other
+  * array vs. linked-list ?
+     * hard to predicate the size
+
+2. write out escrow data when flush log
+  * must decide how to trigger group commit first
+
+3. read latest escrow data from log when system start
+
+== Trigger group commit==
+1. Idea: when the group of waiting trx is big enough (what is a good size? 50?), or timeout when not many active trx (what is a good time interval? 5 or 10ms?)  
