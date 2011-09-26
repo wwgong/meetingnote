@@ -278,4 +278,8 @@ SQL Queries:
   * Escrow
       * Escrow holds in-memory counters for all Escrow-field data
       * If AUTO INCREMENT type data is Escrow type data, can apply Escrow to handle it
-      * Combine "Escrow UPDATE" and the function "mysql_insert_id()" in MySQL to let Escrow UPDATE return current counter value
+      * Combine "Escrow UPDATE" and the function "mysql_insert_id()" in MySQL
+      * Procedure to get new order id
+            * Table T (W_ID, D_ID, O_ID)
+            * UPDATE T SET O_ID = O_ID + 1 WHERE W_ID = :W_ID and D_ID = :D_ID;
+            * Calls a system procedure similar to "mysql_insert_id()" to get recent inserted value
