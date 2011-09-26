@@ -16,6 +16,11 @@ To simplify debugging, let
 
 == Store Procedure ==
 {{{
+Insert: insert new account into table
+    Argument: acctid, balance (can be null)
+    Type: Single Partition Query
+        INSERT INTO ACCOUNT VALUES (?, ?);
+
 Select: retrieve value of balance for each account
     Argument: acctid
     Type: Single Partition Query
