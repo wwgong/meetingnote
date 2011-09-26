@@ -1,0 +1,269 @@
+#summary One-sentence summary of this page.
+
+= Application =
+== Deployment ==
+To simplify debugging, let
+
+  {{{ 
+   num_host = 1
+   num_site_per_host = 2
+  }}}
+
+== Schema Setup ==
+|| Table Name || Account || ||
+|| Column 1 || acctid || primary key, partition col || 
+|| Column 2 || balance || ||
+
+== Store Procedure ==
+{{{
+Select: retrieve value of balance for each account
+    Argument: acctid
+    Type: Single Partition Query
+        SELECT ACCTID, BALANCE FROM ACCOUNT 
+        WHERE ACCTID = ?;
+
+Transfer: transfer balance from one account to another account
+    Argument: from_acctid, to_acctid, amount 
+    Type: Multi Partition Query
+        UPDATE ACCOUNT SET BALANCE = BALANCE - ? WHERE ACCTID = ?;
+        UPDATE ACCOUNT SET BALANCE = BALANCE + ? WHERE ACCTID = ?;
+}}}
+
+
+= Procedure _Transfer_ Message Handling =
+{{{
+[SENDING MPPM] MULTI_PARTITION_PARTICIPANT (FROM 1 TO -1) FOR TXN 988815557723684865
+}}}
+
+{{{
+[SENDING ITM] INITITATE_TASK (FROM 0 TO 1) FOR TXN 988815557723684865
+  WRITE, MULTI PARTITION, COORD 1
+  PROCEDURE: Transfer
+  PARAMS: ParameterSet:,param[0]=1(java.lang.Integer),param[1]=4(java.lang.Integer),param[2]=60(java.lang.Integer)
+}}}
+
+
+{{{
+[RECEIVED] MULTI_PARTITION_PARTICIPANT (FROM 1 TO 2) FOR TXN 988815557723684865
+}}}
+
+{{{
+[Create TxnState]MultiPartitionParticipantTxnState 
+    SiteId = 1
+    initiator: 0 coordinator: false in-progress: false 
+    txnId: TxnId: 988815557723684865 Timestamp: 1317021600133.0 
+    InititatorId: 1 Date: Mon Sep 26 07:20:00 GMT+00:00 2011
+}}}
+
+{{{
+[RECEIVED] INITITATE_TASK (FROM 0 TO 1) FOR TXN 988815557723684865
+  WRITE, MULTI PARTITION, COORD 1
+  PROCEDURE: Transfer
+  PARAMS: ParameterSet:,param[0]=1(java.lang.Integer),param[1]=4(java.lang.Integer),param[2]=60(java.lang.Integer)
+}}}
+
+{{{
+[Create TxnState]MultiPartitionParticipantTxnState
+    SiteId = 2
+    initiator: 0 coordinator: true in-progress: false txnId: 
+    TxnId: 988815557723684865 
+    InititatorId: 1
+}}}
+
+{{{
+[BEGIN SlowPath]
+}}}
+
+{{{
+[CreateLocalFragmentWork]MultiPartitionParticipantTxnState 
+    SiteId = 2
+    initiator: 0 coordinator: false in-progress: true txnId: 
+    TxnId: 988815557723684865
+    InititatorId: 1
+}}}
+
+
+{{{
+[RECEIVED] FRAGMENT_RESPONSE (FROM 2 TO 1) FOR TXN 988815557723684865
+  SUCCESS
+  DIRTY
+  DEP 1073741826 WITH 1 ROWS (modified_tuples)
+  DEP 1073741828 WITH 1 ROWS (modified_tuples)
+}}}
+
+{{{
+[END SlowPath]
+}}}
+
+{{{
+[RECEIVED] COMPLETE_TRANSACTION (FROM COORD: 1) FOR TXN 988815557723684865
+  THIS MESSAGE REQUIRES AN ACK
+}}}
+
+{{{
+[RECEIVED] COMPLETE_TRANSACTION_RESPONSE (FROM EXEC SITE: 2) FOR TXN ID: 988815557723684865
+}}}
+
+{{{
+[SENDING MPPM] MULTI_PARTITION_PARTICIPANT (FROM 1 TO -1) FOR TXN 988815557807570945
+}}}
+
+{{{
+[SENDING ITM] INITITATE_TASK (FROM 0 TO 1) FOR TXN 988815557807570945
+  WRITE, MULTI PARTITION, COORD 1
+  PROCEDURE: Transfer
+  PARAMS: ParameterSet:,param[0]=3(java.lang.Integer),param[1]=2(java.lang.Integer),param[2]=50(java.lang.Integer)
+
+}}}
+
+{{{
+[RECEIVED] MULTI_PARTITION_PARTICIPANT (FROM 1 TO 2) FOR TXN 988815557807570945
+}}}
+
+{{{
+[RECEIVED] INITITATE_TASK (FROM 0 TO 1) FOR TXN 988815557807570945
+  WRITE, MULTI PARTITION, COORD 1
+  PROCEDURE: Transfer
+  PARAMS: ParameterSet:,param[0]=3(java.lang.Integer),param[1]=2(java.lang.Integer),param[2]=50(java.lang.Integer)
+}}}
+
+{{{
+[Create TxnState]MultiPartitionParticipantTxnState 
+    SiteId = 2
+    initiator: 0 coordinator: false in-progress: false 
+    txnId: TxnId: 988815557807570945 
+    InititatorId: 1
+}}}
+
+{{{
+[Create TxnState]MultiPartitionParticipantTxnState 
+    SiteId = 1
+    initiator: 0 coordinator: true in-progress: false txnId: 
+    TxnId: 988815557807570945 
+    InititatorId: 1 
+}}}
+
+{{{
+[SlowPath]
+}}}
+
+{{{
+[CreateLocalFragmentWork]MultiPartitionParticipantTxnState 
+    SiteId = 2
+    initiator: 0 coordinator: false in-progress: true txnId: 
+    TxnId: 988815557807570945 
+    InititatorId: 1
+}}}
+
+{{{
+[RECEIVED] FRAGMENT_RESPONSE (FROM 2 TO 1) FOR TXN 988815557807570945
+  SUCCESS
+  DIRTY
+  DEP 1073741826 WITH 1 ROWS (modified_tuples)
+  DEP 1073741828 WITH 1 ROWS (modified_tuples)
+}}}
+
+{{{
+[RECEIVED] COMPLETE_TRANSACTION (FROM COORD: 1) FOR TXN 988815557807570945
+  THIS MESSAGE REQUIRES AN ACK
+}}}
+
+{{{
+[RECEIVED] COMPLETE_TRANSACTION_RESPONSE (FROM EXEC SITE: 2) FOR TXN ID: 988815557807570945
+}}}
+
+
+= TPCC Benchmark =
+== Schema ==
+|| Table || Primary Key || Reference Table ||
+|| Warehouse || Y ||  ||
+|| District || Y || Warehouse ||
+|| Customer || Y || District ||
+|| History || N || Customer, District ||
+|| Order || Y || Customer ||
+|| New-Order || Y || Order ||
+|| Item || Y ||   ||
+|| Stock || Y || Warehouse, Item ||
+|| Order-Line || Y || Order, Stock ||
+
+== Transaction ==
+
+  1. New Order
+{{{
+Input: W_ID, D_ID, C_ID, and data related to Order details
+
+Generate: O_ID
+
+SQL Queries: 
+    SELECT from Customer and Warehouse
+    SELECT from District
+    UPDATE District with new O_ID
+    INSERT into Orders
+    INSERT into New-Order
+    SELECT from Item
+    SELECT from Stock
+    UPDATE Stock with new quantity
+    INSERT into Order-Line
+}}}      
+
+  2. Payment
+{{{
+Input: W_ID, D_ID, C_ID, and info related to payment details
+
+SQL Queries:
+    UPDATE Warehouse and District with new amount
+    SELECT from Warehouse and District
+    SELECT from Customer
+    UPDATE Customer with new amount
+    INSERT into History
+}}}
+
+  3.  Order-Status
+{{{
+Input: W_ID, D_ID
+
+SQL Queries: 
+    SELECT from Customer
+    SELECT from Orders
+    SELECT from Order-Line
+}}}
+
+  4. Delivery
+{{{
+Input: W_ID, CARRIER_ID, DELIVERY_D
+
+Execution Mode: Deferred 
+                (queuing the transaction, 
+                 returning control to the originating terminal independently from the completion of the transaction, 
+                 and recording execution information into a result file)
+
+SQL Queries:
+    SELECT from New-Order
+    SELECT from Orders
+    UPDATE Orders with new Carrier_ID
+    UPDATE Order-Line with new Delivery_D
+    SELECT from Order-Line to get aggregate result
+    UPDATE Customer with result got in above step
+}}}
+
+   5. Stock-Level
+{{{
+Input: W_ID, D_ID, and threshold 
+
+SQL Queries:
+    SELECT from District to retrieve next_o_id
+    SELECT from Order-Line
+    SELECT from Stock and aggregate with threshold constraint
+}}}
+
+ == Generate New Order ID ==
+
+  * Implementation of AUTO INCREMENT in MySQL
+      * When server starts, a SQL query "SELECT MAX(count) FROM table" will be issued to get initial value
+      * A in-memory counter is used to hold current value when server running
+      * AUTO-INC lock is hold for INSERT with AUTO INCREMENT and will be released immediately after the statement instand of the end of the transaction
+      
+  * Escrow
+      * Escrow holds in-memory counters for all Escrow-field data
+      * If AUTO INCREMENT type data is Escrow type data, can apply Escrow to handle it
+      * Combine "Escrow UPDATE" and the function "mysql_insert_id()" in MySQL to let Escrow UPDATE return current counter value
