@@ -36,6 +36,13 @@ Transfer: transfer balance from one account to another account
 
 
 = Procedure _Transfer_ Message Handling =
+  * Setting
+{{{
+Initiator: 0
+Sites: 1 and 2
+       1 is picked as coordinator for Multi Partition Query
+}}}
+
 {{{
 [SENDING MPPM] MULTI_PARTITION_PARTICIPANT (FROM 1 TO -1) FOR TXN 988815557723684865
 }}}
