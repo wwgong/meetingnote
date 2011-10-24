@@ -99,7 +99,7 @@ column_name SEQUENCE ON(partition column, column_name1, …)
 
 
 
-=Finish modifying source code to get 2-partition query’s partition info=
+=Get 2-partition query’s partition info=
   * Syntax to use partition info in 2-partition query
 {{{
 @ProcInfo(
