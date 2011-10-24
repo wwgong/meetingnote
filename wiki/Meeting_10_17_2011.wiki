@@ -1,0 +1,105 @@
+#Meeting note of meeting on 10/17/2011.
+
+= TPCC =
+
+Key configuration for TPCC test. Added by 10/17/2011.
+  
+  * Start SSH service.
+      * Linux: 
+          * Check whether sshd is running: prep sshd
+          * Start sshd: /etc/init.d/sshd start
+          * Flush ip table: sudo iptables -F
+      * Mac: Set System Preference -> Sharing -> Remote Login: On
+
+  * Using public key to avoid typing password
+      * Create public key: ssh-keygen -t rya
+           * It will create a private key id_rsa and a public key id_rsa.pub
+      * Upload id_rsa.pub to remote server you want to connect
+           * scp id_rsa.pub ssh-server:id_rsa_mydesktop.pub
+      * Append keys to the authorization file
+           * cat id_rsa.pub >> authorized_keys
+           * cat id_rsa.pub >> authorized_keys2
+
+
+= Send out Fragment earlier =
+
+==Dependency Tree of Catalog Objects in VoltDB==
+{{{
+Cluster
+	Database
+		User
+			GroupRef
+		Group
+			UserRef
+		Table
+			Column
+				ConstraintRef
+			Index
+				ColumnRef
+			Constraint
+				ColumnRef
+			MaterializedViewInfo
+				ColumnRef
+		Program
+		Procedure
+			UserRef
+			GroupRef
+			Table (in partitionInfo)
+			Column (in partitionInfo)
+			AuthProgram
+			Statement
+				StmtParameter
+					ProcParameterRef
+				PlanFragment
+				Column
+			ProcParameter
+		Connector
+			UserRef
+			GroupRef
+			ConnectorTableInfo
+		SnapshotScheule
+	Host
+	Site
+	Partition
+	Deployment
+		Systemsettings
+	SnapshotSchedule
+	CommondLog
+}}}
+
+==Design Idea==
+
+  * In the code, each set of multi-partition SQL statements only can be done after calling recursableRun() twice
+      * recursableRun() -> slowPath() -> recurableRun()
+
+  * Divide procedure initiation into 2 phases
+    * Distribution Phase: recursableRun() -> slowPath(), after slowPath() successfully distributes fragments, return
+    * Real Work Phase: continue work, to process all fragments it received
+
+  * New Txn State: state called post-distribution and ready to do real work
+    * After Txn is polled from m_transactionQueue and finishes Distribution phase
+    * Put it in the m_currTxnQueue
+
+  * initiateProcedure(), processInitiateTask(), slowPath(), and other related function will be called twice before completing one Txn
+
+{{{
+run():
+	while(;)
+		if(txn in m_transactionQueue is ready) {
+			poll(m_transactionQueue, txn);
+			recursableRun(txn)
+			if(1st time run)
+				add(m_currTxnQueue, txn)
+		}
+		else if(m_currTxnQueue is not empty) {
+			poll(m_currTxnQueue, txn)
+			recursableRun(txn)
+		}
+
+
+slowPath():
+	if(1st time run)
+		doDistribution(txn)
+	else
+		recursableRun(txn)
+}}}
