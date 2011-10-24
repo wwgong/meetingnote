@@ -81,6 +81,7 @@ Request: in – (table name, partition column id)
          out – (next sequence value)
 }}}
            * To generate next value: (MinSiteId + CurrentSystemTime)
+                   * Note: Replace MinSiteId + CurrentSystemTime by TxnId, because if we can't have complete partitioned sequence (partition_id + continuous number), any unique number can be used.
            * If system reboots from a existing snapshot, the site id assigned can be different from the data stored in the snapshot, we need to compare them first
                        * case1: if value (current min site id + current system time) is larger than the maximum value stored, no need to change anything.
                        * case2: otherwise, we need to produce a “fake” min site id instead of the real one, which is much larger than the original site id, for example we can double f_site_id until (f_site_id + system time) is larger than the maximum value stored.
