@@ -28,7 +28,7 @@
   * [Meeting20 03/23/2011] _(4:00PM, in Betty's Office)_.
 
 = Meeting for VoltDB =
-  * [Meeting_09_19_2011 09/21/2011]
+  * [Meeting_09_19_2011 09/19/2011]
   * [Meeting_09_26_2011 09/26/2011]
   * [Meeting_10_10_2011 10/10/2011]
   * [Meeting_10_17_2011 10/17/2011]
