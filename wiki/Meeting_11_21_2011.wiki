@@ -1,0 +1,50 @@
+=Design of Early Distribution for Multi-Partition Transaction=
+
+===Transaction Queue===
+
+  * 1. Add a new queue "m_multiPartitionReadyTxnQueue" containing all transactions already distributed transaction and ready to run its work units
+
+  * 2. Old Queue "m_transactionQueue" still contains all coming transactions haven't entered process, and "m_currentTransactionState" still be the transaction who is running its work units
+
+  * 3. Instead of fetching one transaction each time from "m_transactionQueue" to "m_currentTransactionState", we will put transactions to "m_multiPartitionReadyTxnQueue" when it's ready first, and then when its turn to run, assign it to "m_currentTransactionState"
+
+==== Priority====
+
+If there is any ready to start txn in "m_transactionQueue", we will retrieve it and distribute its fragments even though there is any ready to run txn in "m_multiPartitionReadyTxnQueue".
+
+
+== New Process for One-Shot Multi-Partition Transaction==
+    *	Ready to start -- transaction is not blocked in "m_transactionQueue"
+    *	Ready to run -- transaction is the first one in "m_multiPartitionReadyTxnQueue"
+
+  * 1. Execution Site (as the coordinator) sees a transaction is ready to start, pull it out from "m_transactionQueue".
+
+  * 2. Execution Site (as the coordinator) initializes the transaction (func: initiateProcedure()), which process the initiate task message first time (func: distributeFragmentForMultiPartitionTask()).
+
+  * 3. Execution Site folks a thread and stores it in our thread queue.
+
+  * 4. The new thread calls the VoltProcedure corresponding to current transaction trying to get the result
+
+  * 5. Execution Site (as the coordinator) puts this transaction to "m_multiPartitionReadyTxnQueue", and at the same time, the new thread creates all fragments and sends them out.
+
+  * 6. After distributing fragments, the new thread is waiting to get result back from the coordinator site.
+
+  * 7. When the transaction is ready to run, and after the Execution Site (as the coordinator) finish the dispatching work (func: createAllParticipatingFragmentWork()), it knows the distributing phase has finished and it's safe to continue.
+
+  * 8. It sends itself a fake message to let the Execution Site to resume work.
+
+  * 9. Execution Site (as the coordinator) starts to process all fragments and after all works, the result stored in the "m_previousStackFrameDropDependencies" in MultiPartitionParticipantTransactionState.
+
+  * 10. The new thread sees "m_previousStackFrameDropDependencies" is not null, it retrieves results and returns wrapped result.
+
+  * 11. Execution Site receives the wrapped result and return it to the client end.
+
+==For Multi-Shot Multi-Partition Transaction==
+
+  * 11. After step 10 in above process, the new thread will enter another "voltExecuteSQL()" run, and calls "slowPath()", so another fake message will be issued by the coordinator and sent to itself. 
+
+  * 12. The Coordinator executes all work units and prepare the result in the "m_previousStackFrameDropDependencies".
+
+  * 13. After the new result is stored, the new thread will see it, it retrieves the result and returns the wrapped result.
+
+  * 14. After finishing all shots, Execution Site will eventually receives the wrapped result and returns to client.
