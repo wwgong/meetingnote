@@ -48,3 +48,7 @@ If there is any ready to start txn in "m_transactionQueue", we will retrieve it 
   * 13. After the new result is stored, the new thread will see it, it retrieves the result and returns the wrapped result.
 
   * 14. After finishing all shots, Execution Site will eventually receives the wrapped result and returns to client.
+
+== Source code ==
+
+  * Available at escrow/20111121-frontend.zip.
