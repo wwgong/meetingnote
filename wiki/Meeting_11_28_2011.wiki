@@ -245,11 +245,11 @@ System:
 }}}
 
 {{{
-# of Txn with fake remote mode: 262404
-# of Txn with real remote mode: 251902
-1% remote Txn: 1% * 251902 = 2519
+# of Txn (new order) with fake remote mode: 118206
+# of Txn with real remote mode: 113348
+1% remote Txn: 1% * 113348 = 1133
 
-1% * 251902 * T2 + 99% * 251902 * T1 = 262404 * T1
+1% * 113348 * T2 + 99% * 113348 * T1 = 118206 * T1
 
 So, average execution time for a multi-shot Txn is about 5 times of that for a single-shot Txn.
 }}}
