@@ -1,0 +1,256 @@
+#Meeting notes on 11/28/2011.
+
+==Early Distribution Design Differences from last version==
+
+  * When to pull out a Txn and distribute its fragments?
+    * Old: After the ES finishes a Txn's early distribution or returns back from execution of a Txn, check the availability of ready to start Txn.
+    * New: Whenever the execution site (as coordinator) is idle, check whether any available Txn ready to start, if so, start it and distribute its fragments. 
+
+  * Execution Site waits vs. continue while new thread distributing fragments.
+    * Old: Main thread is doing its own work while another thread is distributing fragments.
+    * New: Main thread (ES as coordinator) is waiting while another thread is calculating and generating fragments until it finish distribution.
+
+  * Where to store the thread?
+    * Old: keep a queue in Execution Site
+    * New: inside the transaction state, more specifically in MultiPartitionParticipantTxnState.
+
+
+==Process for a multi-partition transaction==
+
+  * 1.	Execution Site (the coordinator) is idle: no transaction running, waiting for response, and so on.
+  * 2.	Execution Site (the coordinator) sees a transaction is ready to start, so it pulls it out from queue “m_transactionQueue”.
+  * 3.	Execution Site (the coordinator) initializes the transaction (func: initiateProcedure()).
+  * 4.	Execution Site (the coordinator) forks a new thread, which calls the procedure corresponding to current transaction; the new thread will generate all local and remote fragments and distribute them all.
+  * 5.	At the end of distribution, the new thread sends a fake message (of type FragmentResponseMessage) to the coordinator. 
+  * 6.	During step 4 and 5, the thread for the Execution Site (the coordinator) is waiting.
+  * 7.	When the Execution Site receives the fake message, it knows the distribution phase ends and it’s safe to run the transaction now.
+  * 8.	Execution Site will start to process all local fragments, all remote response and generates final result for current shot, which is stored in “m_previousStackFrameDropDependencies” of MultiPartitionParticipantTxnState.
+  * 9.	The new thread is blocked while Execution Site doing step 7 and 8.
+  * 10.	The new thread sees the result and returns wrapped result to the stored procedure in the new thread.
+  * 11.	Stored procedure continues, if there is other voltExecuteSQL(), it distributes fragments for current shot again, wait the result calculated by Execution Site.
+  * 12.	Execution Site is notified by the fake message and start to process current shot, and follows step 7 and 8.
+  * 13.	After last shot is finished, the stored procedure is flagged as “completed”.
+  * 14.	Execution Site sees the status change of stored procedure and ready to fetch result stored in MultiPartitionParticipantTxnState.
+  * 15.	After final result returns to the new thread, the new thread waits for Execution Site to get the result.
+  * 16.	Execution Site gets the result, release the semaphore of the new thread and the new thread ends.
+
+==Result of TPCC running on code provided by Betty==
+{{{
+System:
+	CPU:	2.4 GHz	Intel i5 Quad Cores Processor
+	Memory:	4 GB
+}}}
+{{{
+     [java] At time 10000 out of 60000 (16%):
+     [java]   In the past 10000 ms:
+     [java]     Completed 4840 txns at a rate of 484.00 txns/s
+     [java]   Since the benchmark began:
+     [java]     Completed 4840 txns at a rate of 484.00 txns/s
+     [java] 
+     [java] At time 20000 out of 60000 (33%):
+     [java]   In the past 10000 ms:
+     [java]     Completed 4717 txns at a rate of 471.70 txns/s
+     [java]   Since the benchmark began:
+     [java]     Completed 9557 txns at a rate of 477.85 txns/s
+     [java] 
+     [java] At time 30000 out of 60000 (50%):
+     [java]   In the past 10000 ms:
+     [java]     Completed 31489 txns at a rate of 3148.90 txns/s
+     [java]   Since the benchmark began:
+     [java]     Completed 41046 txns at a rate of 1368.20 txns/s
+     [java] 
+     [java] At time 40000 out of 60000 (66%):
+     [java]   In the past 10000 ms:
+     [java]     Completed 55720 txns at a rate of 5572.00 txns/s
+     [java]   Since the benchmark began:
+     [java]     Completed 96766 txns at a rate of 2419.15 txns/s
+     [java] 
+     [java] At time 50000 out of 60000 (83%):
+     [java]   In the past 10000 ms:
+     [java]     Completed 64986 txns at a rate of 6498.60 txns/s
+     [java]   Since the benchmark began:
+     [java]     Completed 161752 txns at a rate of 3235.04 txns/s
+     [java] Unable to connect to MySQL results recording server.
+     [java] SQLException: The url cannot be null
+     [java] Timeout was 0
+     [java] Trying again
+     [java] Still can't connect.
+     [java] SQLException: The url cannot be null
+     [java] 
+     [java] At time 60000 out of 60000 (100%):
+     [java]   In the past 10000 ms:
+     [java]     Completed 62740 txns at a rate of 6274.00 txns/s
+     [java]   Since the benchmark began:
+     [java]     Completed 224492 txns at a rate of 3741.53 txns/s
+     [java] 
+     [java] ============================== BENCHMARK RESULTS==============================
+     [java] Time: 60000 ms
+     [java] Total transactions: 224492
+     [java] Transactions per second: 3741.53
+     [java]                Delivery:       8939 total       148.98 txn/s      8939.00 txn/m
+     [java]               New Order:     101149 total      1685.82 txn/s    101149.00 txn/m
+     [java]            Order Status:       8807 total       146.78 txn/s      8807.00 txn/m
+     [java]                 Payment:      96562 total      1609.37 txn/s     96562.00 txn/m
+     [java]         Reset Warehouse:          0 total         0.00 txn/s         0.00 txn/m
+     [java]             Stock Level:       9035 total       150.58 txn/s      9035.00 txn/m
+     [java] Breakdown by client:
+     [java]             localhost:0:     224492 total      3741.53 txn/s    224492.00 txn/m
+     [java] Latency summary
+     [java]   MS CLIENT RTT   VOLT RTT  PERC
+     [java]    0      28207      31295  10.0 ....
+     [java]   10      31497      30935  19.8 .....
+     [java]   20      21939      21307  26.6 ....
+     [java]   30      12883      11770  30.3 ..
+     [java]   40       3489       3116  31.3 
+     [java]   50       1884       1892  31.9 
+     [java]   60       3709       4408  33.3 .
+     [java]   70      10790      11075  36.9 ..
+     [java]   80       9308       8814  39.7 .
+     [java]   90       6772       6748  41.8 .
+     [java]  100       4616       4412  43.2 .
+     [java]  110       2959       2974  44.2 .
+     [java]  120       2823       2698  45.0 
+     [java]  130       1918       1668  45.6 
+     [java]  140        819        895  45.8 
+     [java]  150        972        973  46.2 .
+     [java]  160       1398       1353  46.6 
+     [java]  170       1531       1310  47.0 
+     [java]  180       1000        941  47.3 
+     [java]  190     165610     165540 100.0 ...........................
+     [java] ===============================================================================
+}}}
+
+
+
+==Result of TPCC running on new code==
+{{{
+    System:
+	CPU:	2.4 GHz Intel Duo 2
+	Memory:	4 GB
+}}}
+{{{
+     [java] At time 20000 out of 60000 (33%):
+     [java]   In the past 10000 ms:
+     [java]     Completed 40322 txns at a rate of 4032.20 txns/s
+     [java]   Since the benchmark began:
+     [java]     Completed 64948 txns at a rate of 3247.40 txns/s
+     [java] 
+     [java] At time 30000 out of 60000 (50%):
+     [java]   In the past 10000 ms:
+     [java]     Completed 47998 txns at a rate of 4799.80 txns/s
+     [java]   Since the benchmark began:
+     [java]     Completed 112946 txns at a rate of 3764.87 txns/s
+     [java] 
+     [java] At time 40000 out of 60000 (66%):
+     [java]   In the past 10000 ms:
+     [java]     Completed 46753 txns at a rate of 4675.30 txns/s
+     [java]   Since the benchmark began:
+     [java]     Completed 159699 txns at a rate of 3992.48 txns/s
+     [java] 
+     [java] At time 50000 out of 60000 (83%):
+     [java]   In the past 10000 ms:
+     [java]     Completed 47558 txns at a rate of 4755.80 txns/s
+     [java]   Since the benchmark began:
+     [java]     Completed 207257 txns at a rate of 4145.14 txns/s
+     [java] 
+     [java] At time 60000 out of 60000 (100%):
+     [java]   In the past 10000 ms:
+     [java]     Completed 55147 txns at a rate of 5514.70 txns/s
+     [java]   Since the benchmark began:
+     [java]     Completed 262404 txns at a rate of 4373.40 txns/s
+     [java] 
+     [java] ============================== BENCHMARK RESULTS ==============================
+     [java] Time: 60000 ms
+     [java] Total transactions: 262404
+     [java] Transactions per second: 4373.40
+     [java]                Delivery:      10551 total       175.85 txn/s     10551.00 txn/m
+     [java]               New Order:     118206 total      1970.10 txn/s    118206.00 txn/m
+     [java]            Order Status:      10391 total       173.18 txn/s     10391.00 txn/m
+     [java]                 Payment:     112761 total      1879.35 txn/s    112761.00 txn/m
+     [java]         Reset Warehouse:          0 total         0.00 txn/s         0.00 txn/m
+     [java]             Stock Level:      10495 total       174.92 txn/s     10495.00 txn/m
+     [java] Breakdown by client:
+     [java]             localhost:0:     262404 total      4373.40 txn/s    262404.00 txn/m
+     [java] Latency summary
+     [java]   MS CLIENT RTT   VOLT RTT  PERC
+     [java]    0          0          0   0.0 
+     [java]   10          0          0   0.0 
+     [java]   20          0          0   0.0 
+     [java]   30          0          0   0.0 
+     [java]   40          0          0   0.0 
+     [java]   50          0          0   0.0 
+     [java]   60          0          0   0.0 
+     [java]   70          0          0   0.0 
+     [java]   80          0          0   0.0 
+     [java]   90          0          0   0.0 
+     [java]  100          0          0   0.0 
+     [java]  110          0          0   0.0 
+     [java]  120          0          0   0.0 
+     [java]  130          0          0   0.0 
+     [java]  140          0          0   0.0 
+     [java]  150          0          0   0.0 
+     [java]  160          0          0   0.0 
+     [java]  170          0          0   0.0 
+     [java]  180          0          0   0.0 
+     [java]  190     339948     339918 100.0 ..................................................
+     [java] ===============================================================================
+}}}
+
+
+
+
+===Result of TPCC running on new code with REAL remote warehouse===
+{{{
+     [java] At time 60000 out of 60000 (100%):
+     [java]   In the past 10000 ms:
+     [java]     Completed 50730 txns at a rate of 5073.00 txns/s
+     [java]   Since the benchmark began:
+     [java]     Completed 251902 txns at a rate of 4198.37 txns/s
+     [java] 
+     [java] ============================== BENCHMARK RESULTS ==============================
+     [java] Time: 60000 ms
+     [java] Total transactions: 251902
+     [java] Transactions per second: 4198.37
+     [java]                Delivery:      10017 total       166.95 txn/s     10017.00 txn/m
+     [java]               New Order:     113348 total      1889.13 txn/s    113348.00 txn/m
+     [java]            Order Status:      10233 total       170.55 txn/s     10233.00 txn/m
+     [java]                 Payment:     108392 total      1806.53 txn/s    108392.00 txn/m
+     [java]         Reset Warehouse:          0 total         0.00 txn/s         0.00 txn/m
+     [java]             Stock Level:       9912 total       165.20 txn/s      9912.00 txn/m
+     [java] Breakdown by client:
+     [java]             localhost:0:     251902 total      4198.37 txn/s    251902.00 txn/m
+     [java] Latency summary
+     [java]   MS CLIENT RTT   VOLT RTT  PERC
+     [java]    0          0          0   0.0 
+     [java]   10          0          0   0.0 
+     [java]   20          0          0   0.0 
+     [java]   30          0          0   0.0 
+     [java]   40          0          0   0.0 
+     [java]   50          0          0   0.0 
+     [java]   60          0          0   0.0 
+     [java]   70          0          0   0.0 
+     [java]   80          0          0   0.0 
+     [java]   90          0          0   0.0 
+     [java]  100          0          0   0.0 
+     [java]  110          0          0   0.0 
+     [java]  120          0          0   0.0 
+     [java]  130          0          0   0.0 
+     [java]  140          0          0   0.0 
+     [java]  150          0          0   0.0 
+     [java]  160          0          0   0.0 
+     [java]  170          0          0   0.0 
+     [java]  180          0          0   0.0 
+     [java]  190     325317     325233 100.0 ..................................................
+     [java] ===============================================================================
+}}}
+
+{{{
+# of Txn with fake remote mode: 262404
+# of Txn with real remote mode: 251902
+1% remote Txn: 1% * 251902 = 2519
+
+1% * 251902 * T2 + 99% * 251902 * T1 = 262404 * T1
+
+So, average execution time for a multi-shot Txn is about 5 times of that for a single-shot Txn.
+}}}
+     
