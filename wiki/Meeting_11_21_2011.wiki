@@ -2,9 +2,9 @@
 
 ===Transaction Queue===
 
-  * 1. Add a new queue "m_multiPartitionReadyTxnQueue" containing all transactions already distributed transaction and ready to run its work units
+  * 1. Add a new queue "m_multiPartitionReadyTxnQueue" containing all transactions already distributed fragments and ready to run its work units
 
-  * 2. Old Queue "m_transactionQueue" still contains all coming transactions haven't entered process, and "m_currentTransactionState" still be the transaction who is running its work units
+  * 2. Old Queue "m_transactionQueue" still contains all incoming transactions haven't yet been process, and "m_currentTransactionState" still be the transaction which is running its work units
 
   * 3. Instead of fetching one transaction each time from "m_transactionQueue" to "m_currentTransactionState", we will put transactions to "m_multiPartitionReadyTxnQueue" when it's ready first, and then when its turn to run, assign it to "m_currentTransactionState"
 
@@ -15,13 +15,13 @@ If there is any ready to start txn in "m_transactionQueue", we will retrieve it 
 
 == New Process for One-Shot Multi-Partition Transaction==
     *	Ready to start -- transaction is not blocked in "m_transactionQueue"
-    *	Ready to run -- transaction is the first one in "m_multiPartitionReadyTxnQueue"
+    *	Next to run -- transaction is the first one in "m_multiPartitionReadyTxnQueue"
 
   * 1. Execution Site (as the coordinator) sees a transaction is ready to start, pull it out from "m_transactionQueue".
 
   * 2. Execution Site (as the coordinator) initializes the transaction (func: initiateProcedure()), which process the initiate task message first time (func: distributeFragmentForMultiPartitionTask()).
 
-  * 3. Execution Site folks a thread and stores it in our thread queue.
+  * 3. Execution Site forks a thread and stores it in our thread queue.
 
   * 4. The new thread calls the VoltProcedure corresponding to current transaction trying to get the result
 
