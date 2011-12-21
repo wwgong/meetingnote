@@ -1,0 +1,57 @@
+#Meeting note on 12/12/11.
+
+== Escrow ==
+
+=== Escrow Data ===
+1. Structure: (table_name, identifier)
+  * identifier has (inf, val, sup)
+  * identifier can be PK value
+
+2. Only stored in ES
+
+3. Add new ED when Escrow-able txn coming, delete ED when no txn existing operating on this ED. 
+
+=== Escrow Journal ===
+1. Stored both in ES and MPPTS.
+
+  * MPPTS: track journals by txid
+{{{
+(index, table_name, identifier, type)
+
+Type: EU, Ins, Del
+         there are more fields relating to each type
+}}}
+
+  * ES: summarize journals on each ES
+{{{
+(txid, inner_identifier)
+
+inner_identifier: index of journals in its MPPTS
+}}}
+
+2. Kepp EJ only when its tx is running and not completed.
+
+=== Predicate Read / Read ===
+1. Need a new Q
+
+  * transactionQueue: priority Q with all not started tx's
+
+  * startedQueue: it's m_multiPartitionReadyTxnQueue in current design; one txn is put in this Q when it's a SPTS or its fragments has distributed (at least first shot).
+
+  * runningQueue: it's currentTxnState in original VoltDB design; when one txn starts to process its fragments, it should be in this Q
+
+  * waitingQueue: when its next operation is blocked by other txn (with smaller txnid), it should be in this Q and wait the notification of blocking txn.
+
+== Tuple Identifier ==
+
+1. There is table without PK in VoltDB.
+
+2. In EE, PersisitentTable represents tables. The data is of type TBMap. 
+
+   * TBMap is a B tree, each node of it is a pair <char*, TBPtr>, where char* represents the address of its corresponding TBPtr, which points to a TupleBlock.
+
+   * In each TupleBlock, one tuple is identified by the offset.
+
+   * All TBPtr consist a B tree set called TBBucket.
+
+ 
