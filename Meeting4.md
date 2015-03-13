@@ -1,0 +1,107 @@
+Meeting minutes for Meeting#4.
+
+# Design on Oracle #
+
+### Schema ###
+  * T -- table
+| **Column Name** | **Type** | **Constraint** |
+|:----------------|:---------|:---------------|
+|TxId|int|  |
+|id|int|primary key|
+|inf|int|inf >= MIN|
+|val|int|  |
+|sup|int|sup <= MAX|
+
+  * V -- view
+| **Column Name** | **Type** | **Constraint** |
+|:----------------|:---------|:---------------|
+|TxId|int|  |
+|id|int|foreign key|
+|val|int|  |
+
+  * Log -- table
+| **Column Name** | **Type** | **Constraint** |
+|:----------------|:---------|:---------------|
+|TxId|row(8)|primary key|
+|id|int|  |
+|amount|int|  |
+|status|int|in(-1, 0, 1)|
+
+
+### Triggers ###
+  * update\_val: will be fired when updating column value on T.
+```
+create or replace trigger update_val
+instead of update on v
+for each row
+declare
+		pragma autonomous_transaction;
+		amount  int;
+begin
+		amount := :new.val - :old.val;
+		if(:new.val > :old.val) then
+				update t set sup = sup + amount, val = :new.val, txid = :new.txid
+				where id = :new.id;
+		else
+				update t set inf = inf + amount, val = :new.val, txid = :new.txid
+				where id = :new.id;
+		end if;
+		insert into log values(:new.txid, :new.id, amount, 0);
+commit;
+end;
+/
+```
+
+  * confirm\_update: will be fired when updating status on Log
+```
+create or replace trigger confirm_update
+before update on log
+for each row
+declare
+        pragma autonomous_transaction;
+begin
+        if(:new.status > 0) then
+                if(:new.amount > 0) then
+                        update t set inf = inf + :new.amount where id = :new.pk_
+val;
+                else
+                        update t set sup = sup + :new.amount where id = :new.pk_
+val;
+                end if;
+        end if;
+        if(:new.status < 0) then
+                if(:new.amount > 0) then
+                        update t set sup = sup - :new.amount, val = val - :new.a
+mount where id = :new.pk_val;
+                else
+                        update t set inf = inf - :new.amount, val = val - :new.a
+mount where id = :new.pk_val;
+                end if;
+        end if;
+commit;
+end;
+/
+```
+
+
+### App Layer Steps ###
+  1. update t set val = val +/- amount where id = ID;
+  1. update log set status = 1(commit)/-1(abort) where txid = TXID;
+  1. commit;
+
+
+
+# Meeting Notes #
+
+1. Design described above is for one single Escrow Transaction.
+
+2. There are two cases needed to consider:
+  * 2 phases commit for long-term transaction: There is a master transaction which coordinates other child transactions and all transactions act like one single transaction. (distributed transaction)
+  * group commit: because read/write disk is the most expensive operation in database, we should avoid writing log to disk whenever one transaction commit, so group commit is a good option to solve this problem.
+
+
+# Action Points #
+1. For old approach, explore the design of benchmark to test its performance.
+  * study scripts used to test Histex under ~eoneil/isotest/sirp
+
+2. Explore method of XA using Histex to handle above 2 situations.

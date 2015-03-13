@@ -1,0 +1,282 @@
+#Meeting minutes of Meeting#18.
+
+
+# Meeting Note #
+
+### 1. Flush log time interval ###
+In MySQL, the system global variable **"innodb\_flush\_log\_at\_trx\_commit"** allows user to specify how to flush log. There are 3 values available(0, 1, and 2), 1 is the default value which is the only one could guarantee ACID.
+
+| value | log buffer | log file | possible data lost |
+|:------|:-----------|:---------|:-------------------|
+| 0 | written out to log buffer once per second | flush to disk operation is performed on the log buffer one per second | any mysqld process crash can erase the last second of transactions |
+| 1 | written out to log buffer at each transaction commit | flush to disk operation is performed on the log file at each transaction commit | none |
+| 2 | written out to log file at each commit | flush to disk operation is performed on log file once per second | only an operating system crash or a power outage can erase the last second of transactions |
+
+Inside the MySQL, the implementation of three options:
+| value | action |
+|:------|:-------|
+| 0 | do nothing |
+| 1 | write the log to log file, whether flush to disk based on setting |
+| 2 | write the log to log file, but do not flush to disk |
+
+Note: the once-per-second flushing is not guaranteed to happen every second.
+
+### 2. Flush method ###
+In MySQL, the system global variable **"innodb\_flush\_method"** allows user to specify which flush method to use. The default method to flush data and log file is **fsync()**, but there are more options available
+
+| method | open data file | flush data file | open log file | flush log file |
+|:-------|:---------------|:----------------|:--------------|:---------------|
+| default | N/A | fsync() | N/A | fsync() |
+| O\_DSYNC | N/A | fsync() | O\_SYNC | O\_SYNC |
+| O\_DIRECT | O\_DIRECT/directio() | fsync() | N/A | fsync() |
+
+  * O\_SYNC: file is opened for synchronous I/O. Any write(2)s on the resulting file descriptor will block the calling process until the data has been physically written to the underlying hardware.
+  * O\_DIRECT(un-buffered read/write access?): Try to minimize cache effects of the I/O to and from this file. In general this will degrade performance, but it is useful in special situations, such as when applications do their own caching. File I/O is done directly to/from user space buffers. The flag on its own makes at an effort to transfer data synchronously, but does not give the guarantees of the O\_SYNC that data and necessary metadata are transferred. To guarantee synchronous I/O the O\_SYNC must be used in addition to O\_DIRECT.[link](http://www.kernel.org/doc/man-pages/online/pages/man2/open.2.html)
+```
+with O_DIRECT the kernel will do DMA directly from/to the physical memory 
+pointed [to] by the userspace buffer passed as [a] parameter to the read/write 
+syscalls. So there will be no CPU and memory bandwidth spent in the copies 
+between userspace memory and kernel cache, and there will be no CPU time spent 
+in kernel in the management of the cache (like cache lookups, per-page locks etc)
+```
+  * Note1: InnoDB uses fsync() instead of fdatasync() which doesn't flush file's metadata, because they found that fdatasync() caused corruption in some cases reported in 2001 and fsync() is safer. (explanation from the book High performance MySQL, and one post from MySQL mail archive, but in the same post they also mentioned MySQL maps fdatasync() to fsync() later, one evidence is that in the Administration Reference, to flush binlog, it uses fdatasync())
+  * Note2: InnoDB doesn't use O-DSYNC by default because there have been problems on many varieties of Unix.
+
+### 3. tmpfs ###
+_Discuss tmpfs on Linux only._ (
+[tmpfs on Linux](http://www.kernel.org/doc/Documentation/filesystems/tmpfs.txt),
+[How to use tmpfs](http://www.ibm.com/developerworks/library/l-fs3.html))
+
+  * What is tmpfs
+    * a memory-based file system
+  * Features
+    * tmpfs files exist solely in virtual memory maintained by the UNIX kernel
+    * tmpfs files are not differentiated from other uses of physical memory
+    * tmpfs is free to allocate all but 4MB of the system’s swap space
+    * default maximum filesystem size of tmpfs is half of the available RAM
+
+  * Usage
+    * mount tmpfs: mount -t tmpfs -o OPTION  DEV DIR
+```
+size: maximum size(bytes) for this tmpfs instance
+      default value is half of the available RAM 
+      if oversized, the machine will deadlock
+nr_blocks: maximum size in blocks of PAGE_CACHE_SIZE
+nr_inodes: maximum number of inodes for this tmpfs instance
+           default if half of the number of RAM pages
+mode: the permissions as an octal number
+uid: the user id 
+gid: the group id
+```
+    * change size: mount -o remount, size=SIZE DIR
+    * unmount: unmount DIR
+
+### 4. innobase\_commit() ###
+With default fdatasync. It can be divided into three parts.
+  * Fast part: innobase\_commit\_low()
+```
+change undo log segment status
+update binlog info (optional)
+commit the mini-trx
+mark trx to "COMMITTED_IN_MEMORY"
+```
+  * Release mutex: prepare\_commit\_mutex()
+  * Slow part: trx\_commit\_complete\_for\_mysql()
+```
+one trx write log for current waiting group to log file and flush to disk
+```
+
+There are 2 places we need to fsync files
+  * one is committing the mini-trx which recording all actions involved in the process of committing the trx
+  * the other one is writing the log to log file and flush to disk.
+
+I calculated how many fsync() called in above three steps
+  * this number is the total number without considering duplications
+  * actual number is much more smaller
+  * mtr\_commit() which commits the mini-trx calls over 300 fsync()
+  * each log\_write\_up\_to() calls 54 fsync()s
+
+
+# Revise [meeting notes #15](http://code.google.com/p/meetingnote/wiki/Meeting15) #
+
+## Original Meeting Note by Betty ##
+
+Assuming group commit is working.
+  * A group commit is an atomic action
+```
+write the log for the group commit
+advance the pointer to the end of the log to make it legitimate
+```
+
+Escrow data in memory:
+  * eid, inf, sup, committed-val
+    * The committed-val reflects the contributions made by user thread commits, possibly not yet on log disk.
+    * The committed-val corresponding to a group commit start-time will be written with the log records in a group commit.
+    * Inf and sup reflect changes made by transactions not yet committed by user thread commits.
+
+Log records
+  * Copy escrow memory data to log entry at each group commit.
+  * The memory data needed is just {eid, committed-val} as of the time just after the transactions in the group commit.
+
+Recovery:
+  * find the last successful group commit disk block
+  * copy the escrow data there to memory
+  * making inf = sup = committed-val
+
+App actions:
+  * escrow request by tid:
+    * change inf, sup, fail if appropriate
+    * Remember eid, delta in memory, as part of transaction tid’s structure.
+  * commit by tid:
+    * add sum of deltas for each eid (for this tid) to committed-val in escrow memory data, adjust inf, sup
+    * Make the user thread  tid wait for group commit to finish.
+
+Group commit:
+  * Consider the time when a group of almost-committed transactions are awaiting group commit.
+  * Their commit log entries are in the log buffer but it hasn’t yet been written to disk.
+    * --stop application commits
+    * --copy the escrow memory data to the pre-allocated area in the old log buffer
+    * --schedule this buffer for write
+    * --cut over to the new log buffe, pre-allocating its escrow data area
+    * --restart application commits
+    * --when write completes, signal the user threads
+
+## Revised Meeting Note #15 ##
+
+#Meeting minutes of Meeting#15.
+
+
+# Revised system design for Escrow in MySQL #
+
+### 1. What information need to be stored? ###
+
+For each record in Escrow table(will be updated by Escrow transactions later), there is one corresponding variable of type **escrow\_cell\_struct** in the system. Here is the definition of **escrow\_cell\_struct**:
+
+  * eid (type: int)
+> -- The identity number of the record. eg, in Coca-cola example, this field can be the pid of the product.
+
+> -- To simplify problem, let this field be integer type data.
+
+  * escrow\_fields (type: escrow\_fields\_t)
+> -- This struct contains val/inf/sup, most important to implement Escrow
+```
+typedef struct escrow_fields_struct escrow_fields_t;
+
+struct escrow_fields_struct {
+  int	 inf;
+  int	 committed-val;
+  int	 sup;
+};
+```
+
+  * mutex
+> -- To ensure only one trx can access this record at one time.
+> -- Use the kernel mutex in MySQL instead.
+
+  * trx\_list (type: UT\_LIST\_BASE\_NODE\_T(escrow\_trx\_node\_t))
+> -- This list is a double-linked list, includes all running transactions and committing transactions.
+```
+typedef struct escrow_trx_node_struct escrow_trx_node_t;
+
+struct escrow_trx_node_struct {
+	int		txid; 		// the txid stored in this transaction's trx_t
+	int		delta;          // the amount this trx wants to apply on the record
+	enum_status	status;		// only have 2 types, "running" and "finished"
+	UT_LIST_NODE_T(escrow_trx_node_t)	neighbores;
+};
+```
+
+
+### 2. How to manage this information? ###
+
+  * a. When to create the data struct for each record?
+> -- When the server starts, we need to initialize one table(array of escrow\_cell\_struct type) for each escrow table.
+```
+eid: the eid of the record
+escrow_fields: inf = val = commit-val = current value of the field in the record
+trx_list: initialize an empty list
+```
+> -- After the server starts, whenever an Escrow type transactions wants to update the escrow field, we insert one escrow\_cell\_struct type data to corresponding table.
+
+> -- Keep the escrow\_cell\_struct in the buffer while the system is up
+
+> -- Keep one copy of (eid, committed-val) in the log buffer
+
+  * b. When to update it?
+> -- We need to consider it when transactions starts, ends(commit or abort) and when doing group commit, details in next section.
+
+### 3. When and how to manage one _escrow\_cell\_struct_? ###
+
+  * Whenever an Escrow transaction starts to update the record, things need to do to its corresponding escrow\_cell\_struct data:
+
+> -- Look up the escrow table to get its corresponding escrow\_cell\_struct based on the eid.
+
+> -- If there is no escrow\_cell\_struct data created yet, create one, initialize it, and insert one trx\_node\_t type data with its txid to the trx\_list.
+
+> -- Otherwise, create one trx\_node\_t type data with its txid, and add it to trx\_list, the amount it wants to update, and set status to "running".
+
+> -- Request kernel mutex.
+
+> -- Modify inf/sup in escrow\_fields
+
+> -- Release kernel mutex.
+
+  * Whenever an Escrow transaction commits.
+
+> -- Look up the eid in the escrow table.
+
+> -- Go through its escrow\_trx\_list to find the trx\_node\_t node based on txid.
+
+> -- Set status to "finished".
+
+> -- Modify inf/sup in escrow\_fields (see the method introduced in Pat's paper).
+
+> -- Release kernel mutex.
+
+  * Whenever an Escrow transaction aborts.
+
+> -- Look up the eid in the escrow table.
+
+> -- Go through its escrow\_trx\_list to find the trx\_node\_t node based on txid.
+
+> -- Request kernel mutex.
+
+> -- Modify inf/sup in escrow\_fields (see the method introduced in Pat's paper).
+
+> -- Release kernel mutex.
+
+> -- Remove its trx node from escrow\_trx\_list.
+
+  * Whenever group commit.
+
+> -- For each escrow\_cell\_struct data in each escrow table.
+
+> -- Go through its trx\_list to get the "net amount"(sum up the delta) from all "finished" marked trx nodes, and remove all "finished" marked nodes
+
+> -- Update the committed-val in the escrow\_cell\_struct
+
+> -- Do real update to the base table.
+```
+update the table with net amount
+  write log
+    -- update escrow data(eid, committed-val)
+    -- flush the escrow data
+    -- flush the log entries
+  write data
+```
+
+
+### 4. Trigger group commit ###
+
+  * Option 1
+```
+a. work on innodb_flush_log_at_trx_commit = 2
+b. before disk flush happens, insert the work "group commit" described above there
+```
+
+  * Option 2
+```
+a. create another thread
+b. in the log entry of each escrow transaction, there is no evidence about data update
+c. let the thread to new one trx to handle each group commit with data update record
+```

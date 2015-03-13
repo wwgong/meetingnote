@@ -1,0 +1,79 @@
+Meeting minutes of Meeting#9.
+
+# Test Result #
+
+1. with autonomous transaction(escrow transaction)
+  * mpl = 20, time duration = 5min
+  * median sleep time = 15sec
+  * total number of transactions = 422
+  * average number of transactions running in one thread = 21
+
+
+2. without autonomous transaction(doing request one by one)
+  * mpl = 20, time duration = 5min
+  * median sleep time = 15sec
+  * total number of transactions = 22
+  * average number of transactions running in one thread = 1
+
+
+
+# Meeting Notes #
+
+### _Meeting on Thursday(September 16th)_ ###
+1. The reason that causes trigger invalid may due to no isolation level set in the program, and the default isolation level is read-commit in Oracle.
+  * add isolation level in program, see whether fix the problem
+  * try to analyze output to see whether there is isolation errors if using default read-commit
+  * if error happens, try to add a "lock" table to make all transactions use the latest inf/sup
+
+2. Change the table name of "tmp" to "request".
+
+3. In trigger "UPDATE\_VAL", we use the inf/sup with largest "updated\_time", and only 1 row is selected, test what would happen if there are more than 1 rows with largest "updated\_time".
+
+
+### _ADDED Tuesday(September 21st)_ ###
+4 . (from Betty's email) Oracle with one-by-one logging makes escrow too slow, and there seems no good solution can avoid this logging right now, we are going to work inside mysql.
+  * "instead of" trigger
+  * the context of mysql lock/transaction
+  * redefine the problem
+
+
+# Action Points #
+1. Rename table to "request". _DONE_
+
+2. If more than one row are selected in trigger "update\_val", that means some transaction got out-of-date inf/sup which is not supposed to happen, raise an error instead of using cursor loop to fix it.
+
+3. Set isolation level still can't fix invalid trigger/procedure problem.
+
+4.
+  * Set isolation level for each connection to "TRANSACTION\_SERIALIZABLE".
+  * Method to check error: setup a table to record all inf/sup pair and starttime/endtime for each transaction executing trigger "update\_val". if more than 1 transactions with same inf/sup pairs or their starttime/endtime pairs overlap, means error happened.
+    * fields of table "time\_record": txid, inf, sup, starttime, endtime
+    * error did happen
+
+5. Try to fix above error.
+  * add another table "lock" only have two fields: id, and count which only simply calculates how many transactions have accessed this row.
+  * set isolation level for the trigger to serializable.
+  * add "update" on "locktab" in trigger "update\_val"
+  * error still happen
+  * sometime returns error: "ORA-08177: can't serialize access for this transaction" with serializable setting in trigger "update\_val"
+
+6. Other problems related.
+  * same transaction numbers returned in same thread, so that (txid, id) is no more unique in table "request" and "journal"
+    * add a timestamp or sequence number to each table?
+
+7. Mysql.
+  * no "instead of" trigger in mysql.
+  * context of transaction is in /storage/innobase/include/Trx0trx.h
+  * source code files need to read first:
+    * /storage/innobase/trx/**.c
+    * /storage/innobase/lock/Lock0lock.c
+    * /storage/innobase/row/**.c
+    * /storage/innobase/read/Read0read.c,
+    * /storage/innobase/dict/Dict0dict.c
+    * /storage/innobase/srv/Srv0srv.c
+  * define the problem:
+    * add a keyword "escrow" in "update" statement
+    * or add a new statement "set transaction escrow" like "set isolation level" followed by normal "update" statement
+    * or add another system type to specify one field to be escrow type, then any update to this field automatically to be applied as escrow transaction
+  * useful link:
+    * [Internals of MySQL](http://forge.mysql.com/wiki/MySQL_Internals)

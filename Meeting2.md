@@ -1,0 +1,24 @@
+Meeting minutes for Meeting#2.
+
+# Meeting Notes #
+
+Asked questions related to CS734 homeworks.
+
+1. HW2
+  * BHG Exercise 3.1
+2. HW3
+  * SPECIAL. RIID&ID, R&IID
+  * 3. IL4&HL2, IL4&HL5
+3. HW4
+  * 3(b) Show that if we only have indexes that concatenate one or more column values, such indexes are also restricted to a set of ranges by WHERE clause predicts on columns of the
+
+  * 3(e) Note that if we added an indexable predicate: SQUARE(col1) + SQUARE(col2) <= 1.0, then though questions 3.a and 3.b are still true, 3.c and 3.d are not.
+
+
+# Action Points #
+
+1.  Download MySql product release version V5.1.49.
+
+  * There are both Binary version on Linux and Source Code, so I installed the binary version on the Ubuntu machine and use SourceInsight to view source code.
+
+2. Initialize design for Escrow method in MySql using existing features, such as introducing new data type, building stored program(procedure, function, and trigger) and modifying table structure of old table as well as system tables.

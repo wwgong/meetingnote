@@ -1,0 +1,116 @@
+#Meeting minutes of Meeting#10.
+
+# Meeting Notes #
+1. For project on Oracle.
+
+  * The potential problem that the trigger might get more than 1 latest inf/sup pair can be solved by more precise timestamp
+    * Modify the TIMESTAMP data type to get nanosecond precision
+
+  * Same TransactionID for all transactions within one thread.
+    * Add timestamp to transactions within one thread to distinguish
+
+  * Error: "ORA-08177: can't serialize access for this transaction" with serializable setting in trigger "update\_val"
+    * try to increase the size of table space, because the reason of this error may be due to small table space can't store enough certain versions.
+
+
+2. Escrow in MySQL.
+  * IDE: try Eclipse for C/C++.
+  * main task: explore where, "row" or "lock" or "transaction", to add new code to implement Escrow transaction.
+  * how to distinguish Escrow and regular transaction:
+    * hard code: specify table name and column name, when meet certain condition, follow escrow transaction path.
+  * try to write pseudo code of "update" statement of Escrow Transaction type.
+
+
+# Action Points #
+1. Get nanosecond precision for TIMESTAMP type data in table "request".
+  * TRY:
+    * timestamp(9) represents nanosecond precision TIMESTAMP type data.
+    * SYSTIMESTAMP(9) get current time with nanosecond precision.
+  * Result
+    * all last 3 digits inserted in the table are 0.
+    * reason: The fractional time portion of TIMESTAMP data type is platform dependent.
+      * try command "date +%N", the output is nothing, means the platform doesn't support nanosecond precision(9 digits), so that Oracle which only simple use what returned can't get nanosecond precision.
+
+2. Add timestamp to distinguish transactions within one thread.
+  * add one field "createtime"of TIMESTAMP type in table JOURNAL.
+  * the value of "createtime" is the same as the value of "updated\_time" in table REQUEST
+  * need to return this value to application code, because we need it to find the correct record to update its "updated\_time"(table REQUEST), "tx\_status"(table JOURNAL) and inf/sup pair(table "REQUEST") in procedure FINISH\_ORDER.
+  * The reason we don't need to worry there might exist same pair (timestamp, txid, id) triplets is, txid is different among different threads, and timestamp must be different among transactions within same thread.
+
+3. Error: "ORA-08177: can't serialize access for this transaction" with serializable setting in trigger "update\_val"
+  * First. the scenario causing this problem is:
+```
+Transaction A and B start (doesn't matter which started first)
+Transaction B updates a row.
+Transaction B commits.
+Transaction A attempts to update the same row.
+```
+  * From Oracle documentation, it says "Oracle's serializable isolation is suitable for environments where there is a relatively low chance that two concurrent transactions will modify the same rows and the long-running transactions are primarily read only. It is most suitable for environments with large databases and short transactions that update only a few rows.", which means SERIALIZABLE is not suitable for our case.
+  * Its suggestion for this error is "Coding serializable transactions requires extra work by the application developer to check for the Cannot serialize access error and to undo and retry the transaction" -- rollback and retry it.
+  * So, increasing table space doesn't help and we need to rethink about the isolation level problem again.
+
+
+4. Eclipse for C/C++.
+  * better than Anjuta.
+
+5. Debug MySQL.
+  * project built successfully inside Eclipse and outside Eclipse
+  * have trouble running project, mysqld
+
+6. 1st try of pseudo code in mysql.
+  * file: _Trx0trx.h_, structure: _trx\_struct_
+    * add a struct "escrow\_struct" keeping all related info here
+```
+struct escrow_struct {
+    ibool is_escrow;
+    dict_table_t* table;
+    upd_node_t*	upd_node;
+    que_thr_t*	thr;
+}
+```
+    * add a field
+```
+escrow_t* escrow;
+```
+  * file: _Row0mysql.c_, function: _row\_update\_for\_mysql()_
+    * add code
+```
+if(certain table with certain field) {
+    set is_escrow of escrow in current trx = true;
+    copy prebuit->table to escrow->table
+    copy prebuilt->upd_node to escorw->upd_node
+}
+```
+  * file: _Row0upd.c_, function: _row\_upd\_step()_
+    * modify affected code
+```
+if(!trx->escorw->is_escrow){
+    err = lock_table(0, node->table, LOCK_IX, thr); 
+    do real update;
+}else {
+    err = lock_table(0, node->table, LOCK_S, thr);
+    update inf/val/sup in shared memory;
+    return without real updating;
+}
+```
+  * file: _Trx0trx.c_, function: _trx\_commit\_for\_mysql()_
+    * add code doing real update here
+```
+if(escorw->is_escrow){
+    set escrow.is_escrow to false;
+    row_upd_step(escrow->thr);
+    modify val and inf/sup in shared memory again;
+}
+```
+  * file: _Trx0roll.c_, function: _trx\_rollback()_
+    * add code recalculate val and inf/sup and skip real update
+```
+if(escorw->is_escrow){
+    modify inf/val/sup in shared memory;
+}
+```
+
+
+7. Two useful articles about group commit based on InnoDB 1.0.4:
+  * [Great performance effect of fixing broken group commit](http://yoshinorimatsunobu.blogspot.com/2009/08/great-performance-effect-of-fixing.html)
+  * [Group commit and InnoDB](http://www.facebook.com/note.php?note_id=121808390932)
